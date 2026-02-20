@@ -1,7 +1,5 @@
 import datetime as dt
 import math
-import subprocess
-import sys
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -18,14 +16,6 @@ try:
     import twstock
 except Exception:
     twstock = None
-
-# Render 有時會遇到套件未正確安裝，這裡做一次自動補安裝
-if twstock is None:
-    try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "twstock"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        import twstock  # type: ignore
-    except Exception:
-        twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
 
