@@ -3,6 +3,8 @@ services:
     name: tw-stock-screener
     env: python
     plan: free
+    autoDeploy: true
+    healthCheckPath: /_stcore/health
     rootDir: stock_screener_web
     buildCommand: pip install -r requirements.txt
     startCommand: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0
