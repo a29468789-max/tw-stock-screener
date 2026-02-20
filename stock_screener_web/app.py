@@ -474,8 +474,8 @@ st.caption("日K主導，盤中用即時價量更新今日日K後重算分數。
 
 with st.sidebar:
     st.header("資料模式")
-    mode = st.radio("選擇", ["真實台股即時", "Mock示範"], index=0)
-    universe_n = st.slider("掃描檔數", 20, 300, 80, 10)
+    mode = st.radio("選擇", ["真實台股即時", "Mock示範"], index=1)
+    universe_n = st.slider("掃描檔數", 20, 300, 40, 10)
     topn = st.slider("排行榜 TopN", 5, 30, 10, 1)
     refresh_sec = st.slider("建議手動刷新秒數", 5, 60, 10, 5)
     st.caption("真實模式建議每 10~20 秒重新整理一次，避免資料源壓力。")
