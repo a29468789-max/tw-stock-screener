@@ -1,5 +1,7 @@
 import datetime as dt
 import math
+import subprocess
+import sys
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -10,6 +12,14 @@ try:
     import twstock
 except Exception:
     twstock = None
+
+# Render 有時會遇到套件未正確安裝，這裡做一次自動補安裝
+if twstock is None:
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "twstock"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        import twstock  # type: ignore
+    except Exception:
+        twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
 
@@ -416,7 +426,7 @@ if mode == "Mock示範":
     market = generate_mock_snapshot(n=universe_n, seed=42)
 else:
     if twstock is None:
-        st.error("缺少 twstock 套件，請先 pip install -r requirements.txt")
+        st.error("目前無法載入 twstock（Render 依賴安裝異常）。請稍後重整；若仍失敗可先切換 Mock示範。")
         st.stop()
 
     symbols = get_tw_symbols(limit=universe_n)
