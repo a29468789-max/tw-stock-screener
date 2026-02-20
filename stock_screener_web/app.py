@@ -289,7 +289,9 @@ def get_tw_symbols(limit: int = 200) -> List[str]:
             if getattr(info, "type", "") != "股票":
                 continue
             items.append(code)
-        return sorted(set(items))[:limit]
+        # twstock 在某些雲端環境可能初始化成功但代碼表為空，改走後備來源
+        if items:
+            return sorted(set(items))[:limit]
 
     # fallback: 只抓上市代碼（.TW）
     items = []
