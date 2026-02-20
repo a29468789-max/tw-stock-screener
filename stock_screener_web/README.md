@@ -1,6 +1,6 @@
 # 台股日K主導盤中決策輔助（Web 即時版）
 
-## 啟動
+## 本機啟動
 
 ```bash
 cd stock_screener_web
@@ -9,6 +9,24 @@ streamlit run app.py
 ```
 
 瀏覽器：`http://localhost:8501`
+
+---
+
+## 雲端上架（公開網址）
+
+### A) Streamlit Community Cloud（最快）
+1. 把專案推到 GitHub
+2. 到 https://share.streamlit.io
+3. New app → 選 repo
+4. Main file path：`stock_screener_web/app.py`
+5. Deploy
+
+上架後會得到：`https://<your-app>.streamlit.app`
+
+### B) Render（備案）
+本專案已附 `render.yaml`，推到 GitHub 後在 Render 直接 Import。
+
+---
 
 ## 模式
 - **真實台股即時**（預設）
