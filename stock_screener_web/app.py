@@ -504,7 +504,7 @@ else:
         if rt is None:
             last = daily.iloc[-1]
             rt = {
-                "price": float(last["close"]),
+                "last": float(last["close"]),
                 "open": float(last["open"]),
                 "high": float(last["high"]),
                 "low": float(last["low"]),
