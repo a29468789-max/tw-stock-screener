@@ -471,17 +471,19 @@ if mode == "Mock示範":
 else:
     symbols = get_tw_symbols(limit=universe_n)
     if not symbols:
-        st.error("無法取得台股股票池，請確認網路可連線。")
-        st.stop()
+        st.warning("即時股票池暫時不可用，已自動切換 Mock 示範資料。")
+        market = generate_mock_snapshot(n=universe_n, seed=42)
+        symbols = []
 
     rows = []
-    progress = st.progress(0, text="載入即時資料中...")
+    progress = st.progress(0, text="載入即時資料中...") if symbols else None
 
     for i, sym in enumerate(symbols, start=1):
         daily = fetch_daily_history(sym)
         rt = fetch_realtime(sym)
         if daily is None or len(daily) < 120 or rt is None:
-            progress.progress(i / len(symbols), text=f"{i}/{len(symbols)}")
+            if progress is not None:
+                progress.progress(i / len(symbols), text=f"{i}/{len(symbols)}")
             continue
 
         daily2 = upsert_today_bar(daily, rt)
@@ -512,15 +514,17 @@ else:
                 "_detail": result,
             }
         )
-        progress.progress(i / len(symbols), text=f"{i}/{len(symbols)}")
+        if progress is not None:
+            progress.progress(i / len(symbols), text=f"{i}/{len(symbols)}")
 
-    progress.empty()
+    if progress is not None:
+        progress.empty()
 
-    if not rows:
-        st.warning("目前抓不到可用資料（可能盤後/資料源暫時不可用）。")
-        st.stop()
-
-    market = pd.DataFrame(rows)
+    if rows:
+        market = pd.DataFrame(rows)
+    elif symbols:
+        st.warning("目前抓不到可用即時資料，已自動切換 Mock 示範資料。")
+        market = generate_mock_snapshot(n=universe_n, seed=42)
 
 c1, c2, c3 = st.columns(3)
 with c1:
