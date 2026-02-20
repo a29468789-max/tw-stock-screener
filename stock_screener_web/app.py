@@ -1,163 +1,532 @@
-import streamlit as st
-import pandas as pd
+import datetime as dt
+import math
+from typing import Dict, List, Optional
+
 import numpy as np
+import pandas as pd
+import streamlit as st
+
+try:
+    import twstock
+except Exception:
+    twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
 
 
-def generate_market_snapshot(n=120, seed=42):
+# ----------------------------
+# Indicator / scoring helpers
+# ----------------------------
+def ma(s: pd.Series, n: int) -> pd.Series:
+    return s.rolling(n).mean()
+
+
+def rsi(close: pd.Series, n: int = 14) -> pd.Series:
+    diff = close.diff()
+    up = diff.clip(lower=0).rolling(n).mean()
+    dn = (-diff.clip(upper=0)).rolling(n).mean()
+    rs = up / dn.replace(0, np.nan)
+    return 100 - (100 / (1 + rs))
+
+
+def macd(close: pd.Series, fast: int = 12, slow: int = 26, sig: int = 9):
+    ema_f = close.ewm(span=fast, adjust=False).mean()
+    ema_s = close.ewm(span=slow, adjust=False).mean()
+    dif = ema_f - ema_s
+    dea = dif.ewm(span=sig, adjust=False).mean()
+    hist = dif - dea
+    return dif, dea, hist
+
+
+def atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
+    prev_close = df["close"].shift(1)
+    tr = pd.concat(
+        [
+            (df["high"] - df["low"]).abs(),
+            (df["high"] - prev_close).abs(),
+            (df["low"] - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+    return tr.rolling(n).mean()
+
+
+def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    out["ma5"] = ma(out["close"], 5)
+    out["ma20"] = ma(out["close"], 20)
+    out["ma60"] = ma(out["close"], 60)
+    out["vol_ma20"] = ma(out["volume"], 20)
+    out["rsi14"] = rsi(out["close"], 14)
+    out["dif"], out["dea"], out["macd_hist"] = macd(out["close"])
+    out["atr14"] = atr(out, 14)
+    return out
+
+
+def bullish_engulfing(df: pd.DataFrame) -> bool:
+    if len(df) < 2:
+        return False
+    a, b = df.iloc[-2], df.iloc[-1]
+    prev_bear = a["close"] < a["open"]
+    curr_bull = b["close"] > b["open"]
+    engulf = (b["open"] <= a["close"]) and (b["close"] >= a["open"])
+    return bool(prev_bear and curr_bull and engulf)
+
+
+def bearish_engulfing(df: pd.DataFrame) -> bool:
+    if len(df) < 2:
+        return False
+    a, b = df.iloc[-2], df.iloc[-1]
+    prev_bull = a["close"] > a["open"]
+    curr_bear = b["close"] < b["open"]
+    engulf = (b["open"] >= a["close"]) and (b["close"] <= a["open"])
+    return bool(prev_bull and curr_bear and engulf)
+
+
+def box_breakout(df: pd.DataFrame, n: int = 20, vol_mult: float = 1.5) -> bool:
+    if len(df) < n + 1:
+        return False
+    hist = df.iloc[-(n + 1) : -1]
+    top = hist["high"].max()
+    b = df.iloc[-1]
+    if pd.isna(b.get("vol_ma20", np.nan)):
+        return False
+    return bool(b["close"] > top and b["volume"] > vol_mult * b["vol_ma20"])
+
+
+def box_breakdown(df: pd.DataFrame, n: int = 20, vol_mult: float = 1.5) -> bool:
+    if len(df) < n + 1:
+        return False
+    hist = df.iloc[-(n + 1) : -1]
+    bot = hist["low"].min()
+    b = df.iloc[-1]
+    if pd.isna(b.get("vol_ma20", np.nan)):
+        return False
+    return bool(b["close"] < bot and b["volume"] > vol_mult * b["vol_ma20"])
+
+
+def classify_state(trend: float, conf: float, rev: float) -> str:
+    if trend >= 8 and conf >= 0.70 and rev <= 0.40:
+        return "強多"
+    if 3 <= trend <= 7:
+        return "多"
+    if -2 <= trend <= 2:
+        return "盤整"
+    if -7 <= trend <= -3:
+        return "空"
+    if trend <= -8 and conf >= 0.70 and rev <= 0.40:
+        return "強空"
+    return "盤整"
+
+
+def score_symbol(df: pd.DataFrame, market_aligned: bool = True) -> Dict:
+    b = df.iloc[-1]
+    prev = df.iloc[-2] if len(df) >= 2 else b
+
+    long_score = 0.0
+    short_score = 0.0
+    reasons = []
+    rev = 0.15
+
+    # Indicator (0.22)
+    if not pd.isna(prev["rsi14"]) and not pd.isna(b["rsi14"]):
+        if prev["rsi14"] < 30 <= b["rsi14"]:
+            long_score += 0.22 * 3
+            reasons.append("RSI上穿30")
+        if prev["rsi14"] > 70 >= b["rsi14"]:
+            short_score += 0.22 * 3
+            reasons.append("RSI下穿70")
+
+    if not pd.isna(prev["macd_hist"]) and not pd.isna(b["macd_hist"]):
+        if prev["macd_hist"] <= 0 < b["macd_hist"]:
+            long_score += 0.22 * 3
+            reasons.append("MACD柱翻正")
+        if prev["macd_hist"] >= 0 > b["macd_hist"]:
+            short_score += 0.22 * 3
+            reasons.append("MACD柱翻負")
+
+    # Technical (0.28)
+    if not any(pd.isna([b["ma5"], b["ma20"], b["ma60"]])):
+        if b["ma5"] > b["ma20"] > b["ma60"]:
+            long_score += 0.28 * 4
+            reasons.append("均線多頭排列")
+        if b["ma5"] < b["ma20"] < b["ma60"]:
+            short_score += 0.28 * 4
+            reasons.append("均線空頭排列")
+
+    # Pattern (0.28)
+    if bullish_engulfing(df):
+        long_score += 0.28 * 4
+        rev += 0.05
+        reasons.append("多頭吞噬")
+    if bearish_engulfing(df):
+        short_score += 0.28 * 4
+        rev += 0.05
+        reasons.append("空頭吞噬")
+    if box_breakout(df):
+        long_score += 0.28 * 5
+        reasons.append("箱體突破帶量")
+    if box_breakdown(df):
+        short_score += 0.28 * 5
+        reasons.append("箱體跌破帶量")
+
+    # Intraday overlay (0.10, cap 30%)
+    intraday_delta = 0.0
+    body = b["close"] - b["open"]
+    rng = max(1e-9, b["high"] - b["low"])
+    upper_shadow = b["high"] - max(b["open"], b["close"])
+    lower_shadow = min(b["open"], b["close"]) - b["low"]
+
+    if body > 0 and upper_shadow / rng < 0.25:
+        intraday_delta += 0.6
+    if body < 0 and lower_shadow / rng < 0.25:
+        intraday_delta -= 0.6
+    if upper_shadow / rng > 0.4:
+        rev += 0.12
+        intraday_delta -= 0.5
+        reasons.append("長上影反轉風險")
+    if lower_shadow / rng > 0.4:
+        rev += 0.12
+        intraday_delta += 0.5
+        reasons.append("長下影反轉風險")
+
+    raw_trend = long_score - short_score
+    max_overlay = max(0.8, abs(raw_trend) * 0.3)
+    intraday_delta = float(np.clip(intraday_delta, -max_overlay, max_overlay))
+    trend = raw_trend + 0.10 * intraday_delta
+
+    # MA squeeze => toward 0
+    if not any(pd.isna([b["ma5"], b["ma20"], b["ma60"], b["close"]])) and b["close"] > 0:
+        spread = (max(b["ma5"], b["ma20"], b["ma60"]) - min(b["ma5"], b["ma20"], b["ma60"])) / b["close"]
+        if spread < 0.015:
+            trend *= 0.8
+            reasons.append("均線糾結")
+
+    # confidence
+    conf = 0.56
+    if market_aligned:
+        conf += 0.08
+    else:
+        conf *= 0.85
+        reasons.append("逆勢於大盤")
+
+    vol_ma20 = b.get("vol_ma20", np.nan)
+    if not pd.isna(vol_ma20) and vol_ma20 > 0 and b["volume"] < 0.7 * vol_ma20:
+        conf -= 0.10
+        reasons.append("量能不足")
+
+    trend = float(np.clip(trend, -20, 20))
+    conf = float(np.clip(conf, 0, 1))
+    rev = float(np.clip(rev, 0, 1))
+    state = classify_state(trend, conf, rev)
+    action = "Watch"
+    if state in ["強多", "多"]:
+        action = "Long"
+    elif state in ["強空", "空"]:
+        action = "Short"
+
+    # entry / SL / TP
+    prev_high = float(df["high"].iloc[-20:-1].max()) if len(df) >= 21 else float(df["high"].iloc[:-1].max())
+    prev_low = float(df["low"].iloc[-20:-1].min()) if len(df) >= 21 else float(df["low"].iloc[:-1].min())
+    atr14 = b.get("atr14", np.nan)
+    atrv = float(atr14) if not pd.isna(atr14) else 0.0
+
+    if action == "Long":
+        entry = f"突破 {prev_high:.2f} 後回測不破，或站回 MA20({b['ma20']:.2f})"
+        sl = min(prev_low, b["close"] - 1.5 * atrv) if atrv > 0 else prev_low
+        tp = b["close"] + max(2 * atrv, (b["close"] - sl) * 1.5) if atrv > 0 else b["close"] * 1.05
+        invalid = "跌回箱體、跌破MA20、量能不支持"
+    elif action == "Short":
+        entry = f"跌破 {prev_low:.2f} 後回抽不過，或跌破 MA20({b['ma20']:.2f})"
+        sl = max(prev_high, b["close"] + 1.5 * atrv) if atrv > 0 else prev_high
+        tp = b["close"] - max(2 * atrv, (sl - b["close"]) * 1.5) if atrv > 0 else b["close"] * 0.95
+        invalid = "站回箱體、站回MA20、放量反彈"
+    else:
+        entry, sl, tp = "等待突破/跌破結構完成", np.nan, np.nan
+        invalid = "N/A"
+
+    return {
+        "state": state,
+        "trend_score": round(trend, 2),
+        "confidence": round(conf, 2),
+        "reversal_risk": round(rev, 2),
+        "action": action,
+        "entry": entry,
+        "stop_loss": None if pd.isna(sl) else round(float(sl), 2),
+        "take_profit": None if pd.isna(tp) else round(float(tp), 2),
+        "invalidation": invalid,
+        "reasons": list(dict.fromkeys(reasons))[:5],
+    }
+
+
+# ----------------------------
+# TW real data adapters
+# ----------------------------
+@st.cache_data(ttl=3600)
+def get_tw_symbols(limit: int = 200) -> List[str]:
+    if twstock is None:
+        return []
+    items = []
+    for code, info in twstock.codes.items():
+        # 股票且台股主板/上櫃優先
+        if not code.isdigit():
+            continue
+        if len(code) != 4:
+            continue
+        if getattr(info, "type", "") != "股票":
+            continue
+        items.append(code)
+    items = sorted(set(items))
+    return items[:limit]
+
+
+@st.cache_data(ttl=1800)
+def fetch_daily_history(symbol: str, months_back: int = 30) -> Optional[pd.DataFrame]:
+    if twstock is None:
+        return None
+    try:
+        stk = twstock.Stock(symbol)
+        today = dt.date.today()
+        start = today - dt.timedelta(days=30 * months_back)
+        raw = stk.fetch_from(start.year, start.month)
+        if not raw:
+            return None
+        rows = []
+        for r in raw:
+            rows.append(
+                {
+                    "date": pd.Timestamp(r.date),
+                    "open": float(r.open),
+                    "high": float(r.high),
+                    "low": float(r.low),
+                    "close": float(r.close),
+                    "volume": float(r.capacity),  # 股數
+                }
+            )
+        df = pd.DataFrame(rows).sort_values("date").reset_index(drop=True)
+        return df
+    except Exception:
+        return None
+
+
+def fetch_realtime(symbol: str) -> Optional[Dict]:
+    if twstock is None:
+        return None
+    try:
+        q = twstock.realtime.get(symbol)
+        if not q or not q.get("success"):
+            return None
+        rt = q.get("realtime", {})
+
+        def f(x):
+            try:
+                return float(x)
+            except Exception:
+                return math.nan
+
+        last = f(rt.get("latest_trade_price"))
+        open_ = f(rt.get("open"))
+        high = f(rt.get("high"))
+        low = f(rt.get("low"))
+        vol = f(rt.get("accumulate_trade_volume"))
+
+        if any(pd.isna([last, open_, high, low])):
+            return None
+
+        if pd.isna(vol):
+            vol = 0.0
+
+        return {
+            "last": float(last),
+            "open": float(open_),
+            "high": float(high),
+            "low": float(low),
+            "volume": float(vol),
+        }
+    except Exception:
+        return None
+
+
+def upsert_today_bar(daily: pd.DataFrame, rt: Dict) -> pd.DataFrame:
+    out = daily.copy()
+    td = pd.Timestamp(dt.date.today())
+    row = {
+        "date": td,
+        "open": rt["open"],
+        "high": rt["high"],
+        "low": rt["low"],
+        "close": rt["last"],
+        "volume": rt["volume"],
+    }
+    if len(out) > 0 and pd.Timestamp(out.iloc[-1]["date"]).normalize() == td.normalize():
+        for k, v in row.items():
+            out.at[out.index[-1], k] = v
+    else:
+        out = pd.concat([out, pd.DataFrame([row])], ignore_index=True)
+    return out
+
+
+def generate_mock_snapshot(n=120, seed=42) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     symbols = [str(1101 + i) for i in range(n)]
     names = [f"股票{i:03d}" for i in range(n)]
-
     trend = np.clip(rng.normal(0, 6, n), -20, 20)
     conf = np.clip(rng.normal(0.66, 0.12, n), 0, 1)
     rev = np.clip(rng.normal(0.33, 0.15, n), 0, 1)
 
-    state = []
-    action = []
+    states = []
+    actions = []
     for t, c, r in zip(trend, conf, rev):
-        if t >= 8 and c >= 0.70 and r <= 0.40:
-            s = "強多"
-            a = "Long"
-        elif 3 <= t <= 7:
-            s = "多"
-            a = "Long"
-        elif -2 <= t <= 2:
-            s = "盤整"
-            a = "Watch"
-        elif -7 <= t <= -3:
-            s = "空"
-            a = "Short"
-        elif t <= -8 and c >= 0.70 and r <= 0.40:
-            s = "強空"
-            a = "Short"
-        else:
-            s = "盤整"
-            a = "Watch"
-        state.append(s)
-        action.append(a)
+        s = classify_state(float(t), float(c), float(r))
+        a = "Long" if s in ["強多", "多"] else "Short" if s in ["強空", "空"] else "Watch"
+        states.append(s)
+        actions.append(a)
 
-    summary_pool = [
-        "均線多頭排列", "均線空頭排列", "箱體突破帶量", "箱體跌破帶量", "RSI上穿30", "RSI下穿70",
-        "MACD翻正", "MACD翻負", "三紅K", "三黑K", "量能不足", "假突破風險"
-    ]
-
-    summary = ["、".join(rng.choice(summary_pool, 2, replace=False)) for _ in range(n)]
-    regime = ["順勢" if rng.random() > 0.28 else "逆勢" for _ in range(n)]
-    risk = ["低" if x < 0.25 else "中" if x < 0.5 else "高" for x in rev]
-
-    return pd.DataFrame({
-        "代碼": symbols,
-        "名稱": names,
-        "狀態": state,
-        "TrendScore": np.round(trend, 2),
-        "Confidence": np.round(conf, 2),
-        "ReversalRisk": np.round(rev, 2),
-        "建議": action,
-        "策略摘要": summary,
-        "順逆勢": regime,
-        "風險": risk,
-    })
+    return pd.DataFrame(
+        {
+            "代碼": symbols,
+            "名稱": names,
+            "狀態": states,
+            "TrendScore": np.round(trend, 2),
+            "Confidence": np.round(conf, 2),
+            "ReversalRisk": np.round(rev, 2),
+            "建議": actions,
+            "策略摘要": ["示意: RSI/MACD/MA" for _ in range(n)],
+            "順逆勢": ["順勢" if rng.random() > 0.28 else "逆勢" for _ in range(n)],
+            "風險": ["低" if x < 0.25 else "中" if x < 0.5 else "高" for x in rev],
+        }
+    )
 
 
-def build_single_report(row):
-    t = row["TrendScore"]
-    c = row["Confidence"]
-    r = row["ReversalRisk"]
-    action = row["建議"]
+# ----------------------------
+# UI
+# ----------------------------
+st.title("台股全市場多空波段決策輔助（即時版）")
+st.caption("日K主導，盤中用即時價量更新今日日K後重算分數。")
 
-    if action == "Long":
-        entry = "突破前高/箱體上緣後回測不破，或站回 MA20"
-        sl = "前低 or ATR*1.5 or MA20下方（取較緊且合理）"
-        tp = "前壓區 + RR>=1.5，或 2*ATR"
-        inv = "跌回箱體、跌破MA20、量能不足"
-    elif action == "Short":
-        entry = "跌破支撐/箱體下緣後回抽不過，或跌破 MA20"
-        sl = "前高 or ATR*1.5 or MA20上方"
-        tp = "前支撐區 + RR>=1.5，或 2*ATR"
-        inv = "站回箱體、站回MA20、放量反彈"
-    else:
-        entry = "等待結構完成（突破/跌破後再確認）"
-        sl = "N/A"
-        tp = "N/A"
-        inv = "N/A"
-
-    top5 = [
-        {"策略": "型態面", "貢獻": round(abs(t)*0.28, 2), "理由": "日K型態與趨勢一致", "無效": inv},
-        {"策略": "技術面", "貢獻": round(abs(t)*0.28, 2), "理由": "均線/支撐壓力給出方向", "無效": inv},
-        {"策略": "指標精選", "貢獻": round(abs(t)*0.22, 2), "理由": "RSI/MACD/KD動能配合", "無效": inv},
-        {"策略": "盤中修正", "貢獻": round(abs(t)*0.10, 2), "理由": "今日日K與量能進度修正", "無效": "假突破/假跌破"},
-        {"策略": "籌碼/基本面", "貢獻": round(abs(t)*0.10, 2), "理由": "作為底色偏好不主導翻轉", "無效": "資料缺失時降信心"},
-    ]
-
-    return {
-        "狀態": row["狀態"],
-        "TrendScore": t,
-        "Confidence": c,
-        "ReversalRisk": r,
-        "建議": action,
-        "進場參考": entry,
-        "停損": sl,
-        "停利": tp,
-        "Top5": pd.DataFrame(top5)
-    }
-
-
-st.title("台股全市場多空波段決策輔助（Web MVP）")
-st.caption("日K主導，盤中以今日日K即時重算（MVP 先以模擬資料示範）")
-
-col1, col2, col3 = st.columns(3)
-with col1:
-    n = st.slider("掃描檔數", 50, 500, 120, 10)
-with col2:
+with st.sidebar:
+    st.header("資料模式")
+    mode = st.radio("選擇", ["真實台股即時", "Mock示範"], index=0)
+    universe_n = st.slider("掃描檔數", 20, 300, 80, 10)
     topn = st.slider("排行榜 TopN", 5, 30, 10, 1)
-with col3:
-    seed = st.number_input("隨機種子", 1, 9999, 42)
+    refresh_sec = st.slider("建議手動刷新秒數", 5, 60, 10, 5)
+    st.caption("真實模式建議每 10~20 秒重新整理一次，避免資料源壓力。")
 
-market = generate_market_snapshot(n=n, seed=int(seed))
+if mode == "Mock示範":
+    market = generate_mock_snapshot(n=universe_n, seed=42)
+else:
+    if twstock is None:
+        st.error("缺少 twstock 套件，請先 pip install -r requirements.txt")
+        st.stop()
+
+    symbols = get_tw_symbols(limit=universe_n)
+    if not symbols:
+        st.error("無法取得台股股票池，請確認網路可連線。")
+        st.stop()
+
+    rows = []
+    progress = st.progress(0, text="載入即時資料中...")
+
+    for i, sym in enumerate(symbols, start=1):
+        daily = fetch_daily_history(sym)
+        rt = fetch_realtime(sym)
+        if daily is None or len(daily) < 120 or rt is None:
+            progress.progress(i / len(symbols), text=f"{i}/{len(symbols)}")
+            continue
+
+        daily2 = upsert_today_bar(daily, rt)
+        daily2 = add_indicators(daily2)
+        result = score_symbol(daily2, market_aligned=True)
+
+        reasons = "、".join(result["reasons"]) if result["reasons"] else "-"
+        regime = "順勢" if "逆勢於大盤" not in reasons else "逆勢"
+        risk = "低" if result["reversal_risk"] < 0.25 else "中" if result["reversal_risk"] < 0.5 else "高"
+
+        name = twstock.codes.get(sym).name if twstock.codes.get(sym) else sym
+
+        rows.append(
+            {
+                "代碼": sym,
+                "名稱": name,
+                "狀態": result["state"],
+                "TrendScore": result["trend_score"],
+                "Confidence": result["confidence"],
+                "ReversalRisk": result["reversal_risk"],
+                "建議": result["action"],
+                "策略摘要": reasons,
+                "順逆勢": regime,
+                "風險": risk,
+                "_detail": result,
+            }
+        )
+        progress.progress(i / len(symbols), text=f"{i}/{len(symbols)}")
+
+    progress.empty()
+
+    if not rows:
+        st.warning("目前抓不到可用資料（可能盤後/資料源暫時不可用）。")
+        st.stop()
+
+    market = pd.DataFrame(rows)
 
 c1, c2, c3 = st.columns(3)
 with c1:
     st.subheader("強多 Top")
     strong_long = market[market["狀態"] == "強多"].sort_values(["TrendScore", "Confidence"], ascending=[False, False]).head(topn)
-    st.dataframe(strong_long, use_container_width=True, hide_index=True)
+    st.dataframe(strong_long.drop(columns=["_detail"], errors="ignore"), use_container_width=True, hide_index=True)
 with c2:
     st.subheader("強空 Top")
     strong_short = market[market["狀態"] == "強空"].sort_values(["TrendScore", "Confidence"], ascending=[True, False]).head(topn)
-    st.dataframe(strong_short, use_container_width=True, hide_index=True)
+    st.dataframe(strong_short.drop(columns=["_detail"], errors="ignore"), use_container_width=True, hide_index=True)
 with c3:
     st.subheader("盤整待突破 Top")
     range_top = market[market["狀態"] == "盤整"].sort_values(["Confidence"], ascending=[False]).head(topn)
-    st.dataframe(range_top, use_container_width=True, hide_index=True)
+    st.dataframe(range_top.drop(columns=["_detail"], errors="ignore"), use_container_width=True, hide_index=True)
 
 st.divider()
 st.subheader("單檔決策報告")
 selected = st.selectbox("選擇股票", market["代碼"].tolist(), index=0)
 row = market[market["代碼"] == selected].iloc[0]
-report = build_single_report(row)
+
+if "_detail" in row and isinstance(row["_detail"], dict):
+    detail = row["_detail"]
+else:
+    detail = {
+        "state": row["狀態"],
+        "trend_score": row["TrendScore"],
+        "confidence": row["Confidence"],
+        "reversal_risk": row["ReversalRisk"],
+        "action": row["建議"],
+        "entry": "等待結構完成",
+        "stop_loss": None,
+        "take_profit": None,
+        "invalidation": "N/A",
+        "reasons": [row.get("策略摘要", "-")],
+    }
 
 m1, m2, m3, m4 = st.columns(4)
-m1.metric("狀態", report["狀態"])
-m2.metric("TrendScore", report["TrendScore"])
-m3.metric("Confidence", report["Confidence"])
-m4.metric("ReversalRisk", report["ReversalRisk"])
+m1.metric("狀態", detail["state"])
+m2.metric("TrendScore", detail["trend_score"])
+m3.metric("Confidence", detail["confidence"])
+m4.metric("ReversalRisk", detail["reversal_risk"])
 
-st.write(f"**建議動作：** {report['建議']}")
-st.write(f"**進場參考：** {report['進場參考']}")
-st.write(f"**停損：** {report['停損']}")
-st.write(f"**停利：** {report['停利']}")
+st.write(f"**建議動作：** {detail['action']}")
+st.write(f"**進場參考：** {detail.get('entry', 'N/A')}")
+st.write(f"**停損：** {detail.get('stop_loss', 'N/A')}")
+st.write(f"**停利：** {detail.get('take_profit', 'N/A')}")
+st.write(f"**無效條件：** {detail.get('invalidation', 'N/A')}")
 
-st.write("**觸發策略 Top5（示意）**")
-st.dataframe(report["Top5"], use_container_width=True, hide_index=True)
+st.write("**觸發策略摘要（Top）**")
+for i, r in enumerate(detail.get("reasons", [])[:5], start=1):
+    st.write(f"{i}. {r}")
 
 st.divider()
 st.subheader("全市場查詢")
 kw = st.text_input("輸入代碼或名稱")
 if kw:
     q = market[market["代碼"].str.contains(kw) | market["名稱"].str.contains(kw, na=False)]
-    st.dataframe(q, use_container_width=True, hide_index=True)
+    st.dataframe(q.drop(columns=["_detail"], errors="ignore"), use_container_width=True, hide_index=True)
 else:
-    st.dataframe(market, use_container_width=True, hide_index=True)
+    st.dataframe(market.drop(columns=["_detail"], errors="ignore"), use_container_width=True, hide_index=True)
 
-st.caption("若要接真實行情：替換 generate_market_snapshot() 並將今日日K動態插入日線序列後重算指標。")
+st.caption(f"已載入 {len(market)} 檔。建議每 {refresh_sec} 秒手動刷新，獲得盤中最新狀態。")
