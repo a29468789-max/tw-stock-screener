@@ -18,6 +18,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
+APP_VERSION = "2026-02-21a"
 
 
 # ----------------------------
@@ -461,6 +462,7 @@ def generate_mock_snapshot(n=120, seed=42) -> pd.DataFrame:
 # ----------------------------
 st.title("台股全市場多空波段決策輔助（即時版）")
 st.caption("日K主導，盤中用即時價量更新今日日K後重算分數。")
+st.caption(f"build {APP_VERSION}")
 
 with st.sidebar:
     st.header("資料模式")
