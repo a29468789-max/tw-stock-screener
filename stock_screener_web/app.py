@@ -6,7 +6,13 @@ from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+import requests
 import streamlit as st
+
+try:
+    import yfinance as yf
+except Exception:
+    yf = None
 
 try:
     import twstock
@@ -274,84 +280,122 @@ def score_symbol(df: pd.DataFrame, market_aligned: bool = True) -> Dict:
 # ----------------------------
 @st.cache_data(ttl=3600)
 def get_tw_symbols(limit: int = 200) -> List[str]:
-    if twstock is None:
-        return []
+    # 優先用 twstock；若不可用，fallback 到 TWSE OpenAPI
+    if twstock is not None:
+        items = []
+        for code, info in twstock.codes.items():
+            if not code.isdigit() or len(code) != 4:
+                continue
+            if getattr(info, "type", "") != "股票":
+                continue
+            items.append(code)
+        return sorted(set(items))[:limit]
+
+    # fallback: 只抓上市代碼（.TW）
     items = []
-    for code, info in twstock.codes.items():
-        # 股票且台股主板/上櫃優先
-        if not code.isdigit():
-            continue
-        if len(code) != 4:
-            continue
-        if getattr(info, "type", "") != "股票":
-            continue
-        items.append(code)
-    items = sorted(set(items))
-    return items[:limit]
+    try:
+        res = requests.get("https://openapi.twse.com.tw/v1/opendata/t187ap03_L", timeout=15)
+        data = res.json() if res.ok else []
+        for row in data:
+            for v in row.values():
+                if isinstance(v, str) and v.isdigit() and len(v) == 4:
+                    items.append(v)
+                    break
+    except Exception:
+        pass
+
+    return sorted(set(items))[:limit]
 
 
 @st.cache_data(ttl=1800)
 def fetch_daily_history(symbol: str, months_back: int = 30) -> Optional[pd.DataFrame]:
-    if twstock is None:
+    # twstock 路徑
+    if twstock is not None:
+        try:
+            stk = twstock.Stock(symbol)
+            today = dt.date.today()
+            start = today - dt.timedelta(days=30 * months_back)
+            raw = stk.fetch_from(start.year, start.month)
+            if not raw:
+                return None
+            rows = []
+            for r in raw:
+                rows.append(
+                    {
+                        "date": pd.Timestamp(r.date),
+                        "open": float(r.open),
+                        "high": float(r.high),
+                        "low": float(r.low),
+                        "close": float(r.close),
+                        "volume": float(r.capacity),
+                    }
+                )
+            return pd.DataFrame(rows).sort_values("date").reset_index(drop=True)
+        except Exception:
+            pass
+
+    # yfinance fallback（.TW）
+    if yf is None:
         return None
     try:
-        stk = twstock.Stock(symbol)
-        today = dt.date.today()
-        start = today - dt.timedelta(days=30 * months_back)
-        raw = stk.fetch_from(start.year, start.month)
-        if not raw:
+        tk = yf.Ticker(f"{symbol}.TW")
+        hist = tk.history(period="3y", interval="1d", auto_adjust=False)
+        if hist is None or hist.empty:
             return None
-        rows = []
-        for r in raw:
-            rows.append(
-                {
-                    "date": pd.Timestamp(r.date),
-                    "open": float(r.open),
-                    "high": float(r.high),
-                    "low": float(r.low),
-                    "close": float(r.close),
-                    "volume": float(r.capacity),  # 股數
-                }
-            )
-        df = pd.DataFrame(rows).sort_values("date").reset_index(drop=True)
-        return df
+        out = hist.reset_index().rename(
+            columns={"Date": "date", "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"}
+        )
+        out["date"] = pd.to_datetime(out["date"]).dt.tz_localize(None)
+        return out[["date", "open", "high", "low", "close", "volume"]].dropna().reset_index(drop=True)
     except Exception:
         return None
 
 
 def fetch_realtime(symbol: str) -> Optional[Dict]:
-    if twstock is None:
+    # twstock 路徑
+    if twstock is not None:
+        try:
+            q = twstock.realtime.get(symbol)
+            if q and q.get("success"):
+                rt = q.get("realtime", {})
+
+                def f(x):
+                    try:
+                        return float(x)
+                    except Exception:
+                        return math.nan
+
+                last = f(rt.get("latest_trade_price"))
+                open_ = f(rt.get("open"))
+                high = f(rt.get("high"))
+                low = f(rt.get("low"))
+                vol = f(rt.get("accumulate_trade_volume"))
+                if not any(pd.isna([last, open_, high, low])):
+                    return {
+                        "last": float(last),
+                        "open": float(open_),
+                        "high": float(high),
+                        "low": float(low),
+                        "volume": 0.0 if pd.isna(vol) else float(vol),
+                    }
+        except Exception:
+            pass
+
+    # yfinance fallback（1m）
+    if yf is None:
         return None
     try:
-        q = twstock.realtime.get(symbol)
-        if not q or not q.get("success"):
+        tk = yf.Ticker(f"{symbol}.TW")
+        h = tk.history(period="1d", interval="1m", auto_adjust=False)
+        if h is None or h.empty:
             return None
-        rt = q.get("realtime", {})
-
-        def f(x):
-            try:
-                return float(x)
-            except Exception:
-                return math.nan
-
-        last = f(rt.get("latest_trade_price"))
-        open_ = f(rt.get("open"))
-        high = f(rt.get("high"))
-        low = f(rt.get("low"))
-        vol = f(rt.get("accumulate_trade_volume"))
-
-        if any(pd.isna([last, open_, high, low])):
-            return None
-
-        if pd.isna(vol):
-            vol = 0.0
-
+        b = h.iloc[-1]
         return {
-            "last": float(last),
-            "open": float(open_),
-            "high": float(high),
-            "low": float(low),
-            "volume": float(vol),
+            "last": float(b["Close"]),
+            "open": float(h.iloc[0]["Open"]),
+            "high": float(h["High"].max()),
+            "low": float(h["Low"].min()),
+            "volume": float(h["Volume"].sum()),
         }
     except Exception:
         return None
@@ -425,10 +469,6 @@ with st.sidebar:
 if mode == "Mock示範":
     market = generate_mock_snapshot(n=universe_n, seed=42)
 else:
-    if twstock is None:
-        st.error("目前無法載入 twstock（Render 依賴安裝異常）。請稍後重整；若仍失敗可先切換 Mock示範。")
-        st.stop()
-
     symbols = get_tw_symbols(limit=universe_n)
     if not symbols:
         st.error("無法取得台股股票池，請確認網路可連線。")
@@ -452,7 +492,10 @@ else:
         regime = "順勢" if "逆勢於大盤" not in reasons else "逆勢"
         risk = "低" if result["reversal_risk"] < 0.25 else "中" if result["reversal_risk"] < 0.5 else "高"
 
-        name = twstock.codes.get(sym).name if twstock.codes.get(sym) else sym
+        if twstock is not None and twstock.codes.get(sym):
+            name = twstock.codes.get(sym).name
+        else:
+            name = sym
 
         rows.append(
             {
