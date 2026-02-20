@@ -18,7 +18,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21c"
+APP_VERSION = "2026-02-21d"
 
 
 # ----------------------------
@@ -269,46 +269,66 @@ def score_symbol(df: pd.DataFrame, market_aligned: bool = True) -> Dict:
 # ----------------------------
 # TW real data adapters
 # ----------------------------
+CORE_SYMBOLS = [
+    "1101", "1102", "1216", "1301", "1303", "1326", "1402", "1476", "1590", "2002",
+    "2207", "2301", "2303", "2308", "2317", "2327", "2330", "2344", "2357", "2379",
+    "2382", "2395", "2408", "2409", "2412", "2449", "2454", "2474", "2603", "2609",
+    "2615", "2634", "2880", "2881", "2882", "2883", "2884", "2885", "2886", "2887",
+    "2888", "2890", "2891", "2892", "2912", "3008", "3017", "3034", "3037", "3045",
+    "3231", "3443", "3481", "3711", "4904", "4938", "5871", "5880", "5886", "6005",
+    "6415", "6505", "6669", "8046", "8454", "9904", "9910", "9933",
+]
+
+
 @st.cache_data(ttl=3600)
 def get_tw_symbols(limit: int = 200) -> List[str]:
-    # 優先用 twstock；若不可用，fallback 到 TWSE OpenAPI
-    if twstock is not None:
-        items = []
-        for code, info in twstock.codes.items():
-            if not code.isdigit() or len(code) != 4:
-                continue
-            if getattr(info, "type", "") != "股票":
-                continue
-            items.append(code)
-        # twstock 在某些雲端環境可能初始化成功但代碼表為空，改走後備來源
-        if items:
-            return sorted(set(items))[:limit]
-
-    # fallback: 只抓上市代碼（.TW）
     items = []
-    try:
-        res = requests.get("https://openapi.twse.com.tw/v1/opendata/t187ap03_L", timeout=15)
-        data = res.json() if res.ok else []
-        for row in data:
-            for v in row.values():
-                if isinstance(v, str) and v.isdigit() and len(v) == 4:
-                    items.append(v)
-                    break
-    except Exception:
-        pass
 
-    # 最後保底：避免 Render/TWSE 暫時性連線問題導致整個真實模式不可用
+    # 優先用 twstock；若不可用，fallback 到公開 API
+    if twstock is not None:
+        try:
+            for code, info in twstock.codes.items():
+                if not code.isdigit() or len(code) != 4:
+                    continue
+                if getattr(info, "type", "") != "股票":
+                    continue
+                items.append(code)
+        except Exception:
+            pass
+
+    # fallback 1: 上市
     if not items:
-        items = [
-            "1101", "1102", "1216", "1301", "1303", "1326", "1402", "1476", "1590", "2002",
-            "2207", "2301", "2303", "2308", "2317", "2327", "2330", "2344", "2357", "2379",
-            "2382", "2395", "2408", "2409", "2412", "2449", "2454", "2474", "2603", "2609",
-            "2615", "2634", "2880", "2881", "2882", "2883", "2884", "2885", "2886", "2887",
-            "2888", "2890", "2891", "2892", "2912", "3008", "3017", "3034", "3037", "3045",
-            "3231", "3443", "3481", "3711", "4904", "4938", "5871", "5880", "5886", "6005",
-            "6415", "6505", "6669", "8046", "8454", "9904", "9910", "9933",
-        ]
+        try:
+            res = requests.get("https://openapi.twse.com.tw/v1/opendata/t187ap03_L", timeout=15)
+            data = res.json() if res.ok else []
+            for row in data:
+                for v in row.values():
+                    if isinstance(v, str) and v.isdigit() and len(v) == 4:
+                        items.append(v)
+                        break
+        except Exception:
+            pass
 
+    # fallback 2: 上櫃
+    if not items:
+        try:
+            res = requests.get("https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes", timeout=15)
+            data = res.json() if res.ok else []
+            for row in data:
+                for key in ("SecuritiesCompanyCode", "Code", "股票代號"):
+                    v = row.get(key)
+                    if isinstance(v, str) and v.isdigit() and len(v) == 4:
+                        items.append(v)
+                        break
+        except Exception:
+            pass
+
+    # 最後保底：避免雲端暫時性連線問題導致真實模式完全不可用
+    if not items:
+        items = CORE_SYMBOLS.copy()
+
+    # 若 API 只回了少量資料，補齊核心清單以提升穩定性
+    items.extend(CORE_SYMBOLS)
     return sorted(set(items))[:limit]
 
 
