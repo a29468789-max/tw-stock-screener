@@ -493,10 +493,22 @@ else:
     for i, sym in enumerate(symbols, start=1):
         daily = fetch_daily_history(sym)
         rt = fetch_realtime(sym)
-        if daily is None or len(daily) < 120 or rt is None:
+        if daily is None or len(daily) < 120:
             if progress is not None:
                 progress.progress(i / len(symbols), text=f"{i}/{len(symbols)}")
             continue
+
+        # 即時源偶發失敗時，改用最新日K收盤近似，避免整體清單為空
+        if rt is None:
+            last = daily.iloc[-1]
+            rt = {
+                "price": float(last["close"]),
+                "open": float(last["open"]),
+                "high": float(last["high"]),
+                "low": float(last["low"]),
+                "volume": float(last["volume"]),
+                "time": "fallback-daily",
+            }
 
         daily2 = upsert_today_bar(daily, rt)
         daily2 = add_indicators(daily2)
