@@ -19,7 +19,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r58"
+APP_VERSION = "2026-02-21r59"
 
 
 # ----------------------------
@@ -889,6 +889,30 @@ option_items = []
 for code in market["代碼"].tolist():
     name = symbol_map.get(code, str(market.loc[market["代碼"] == code, "名稱"].iloc[0]))
     option_items.append(f"{code} {name}")
+
+# 防呆：避免極端情況下 option_items 為空造成 selectbox/iloc 崩潰
+if not option_items:
+    emergency_code = get_base_pool()[0]
+    emergency_name = symbol_map.get(emergency_code, emergency_code)
+    market = pd.DataFrame(
+        [
+            {
+                "代碼": emergency_code,
+                "名稱": emergency_name,
+                "狀態": "盤整",
+                "TrendScore": 0.0,
+                "Confidence": 0.0,
+                "ReversalRisk": 0.0,
+                "建議": "Watch",
+                "策略摘要": "啟用緊急保底清單",
+                "順逆勢": "順勢",
+                "風險": "中",
+                "_detail": {},
+            }
+        ]
+    )
+    option_items = [f"{emergency_code} {emergency_name}"]
+    st.info("已啟用緊急單檔保底，確保查詢功能持續可用。")
 
 selected_label = st.selectbox("選擇股票（可直接打字搜尋代碼/名稱）", option_items, index=0)
 selected = selected_label.split(" ")[0]
