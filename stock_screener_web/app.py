@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r93"
+APP_VERSION = "2026-02-21r94"
 
 
 # ----------------------------
@@ -486,14 +486,17 @@ def safe_get_tw_symbols(limit: int, cache_buster: str = APP_VERSION) -> List[str
     target_n = max(20, int(limit or 20))
     base_pool = get_base_pool()
 
-    # 優先保底：若本地股票池已足夠，直接使用，避免外部 API 短暫故障影響掃描可用性
-    if len(base_pool) >= target_n:
-        return base_pool[:target_n]
+    # Local-first：本地股票池永遠是主來源，外部 API 僅作為補充。
+    symbols = [
+        s for s in (base_pool or []) if isinstance(s, str) and s.isdigit() and len(s) == 4
+    ]
 
-    try:
-        symbols = get_tw_symbols(limit=target_n, cache_buster=cache_buster)
-    except Exception:
-        symbols = []
+    if len(symbols) < target_n:
+        try:
+            remote_symbols = get_tw_symbols(limit=target_n, cache_buster=cache_buster)
+        except Exception:
+            remote_symbols = []
+        symbols = list(dict.fromkeys(symbols + (remote_symbols or [])))
 
     symbols = ensure_symbol_pool(symbols, min_size=target_n)
     if not symbols:
