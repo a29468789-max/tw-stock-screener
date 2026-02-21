@@ -18,7 +18,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r6"
+APP_VERSION = "2026-02-21r7"
 
 
 # ----------------------------
@@ -585,12 +585,21 @@ with st.sidebar:
     refresh_sec = st.slider("建議手動刷新秒數", 5, 60, 10, 5)
     st.caption("真實模式建議每 10~20 秒重新整理一次，避免資料源壓力。")
 
-symbol_map = get_symbol_name_map(limit=max(2000, universe_n * 5))
+symbol_map = {**{s: s for s in CORE_SYMBOLS}, **LOCAL_SYMBOL_NAME_MAP}
+try:
+    remote_symbol_map = get_symbol_name_map(limit=max(2000, universe_n * 5))
+    if remote_symbol_map:
+        symbol_map.update(remote_symbol_map)
+except Exception:
+    pass
 
 if mode == "Mock示範":
     market = generate_mock_snapshot(n=universe_n, seed=42)
 else:
-    symbols = get_tw_symbols(limit=universe_n)
+    try:
+        symbols = get_tw_symbols(limit=universe_n)
+    except Exception:
+        symbols = []
     # 雙重保底：不論外部來源狀態都維持可掃描清單，避免 UI 出現股票池不可用
     api_symbols = list(symbols)
     symbols = list(dict.fromkeys((symbols or []) + LOCAL_SYMBOL_POOL))[: max(20, universe_n)]
