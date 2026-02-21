@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r87"
+APP_VERSION = "2026-02-21r88"
 
 
 # ----------------------------
@@ -492,7 +492,9 @@ def safe_get_tw_symbols(limit: int, cache_buster: str = APP_VERSION) -> List[str
     symbols = ensure_symbol_pool(symbols, min_size=target_n)
     if not symbols:
         symbols = get_base_pool()
-    return symbols[: max(20, min(target_n, len(symbols)))]
+    # 最終硬保底：永遠回傳可掃描長度，避免任何邊界情況讓清單變空或不足
+    symbols = pad_symbols_to_target(symbols, target_n)
+    return symbols[:target_n]
 
 
 def build_universe(limit: int) -> List[str]:
