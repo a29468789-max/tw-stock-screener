@@ -603,8 +603,60 @@ def fetch_daily_history(symbol: str, months_back: int = 30) -> Optional[pd.DataF
     return generate_local_history(symbol)
 
 
+def _parse_mixed_price(raw) -> float:
+    if raw is None:
+        return math.nan
+    text = str(raw).strip()
+    if not text or text == "-":
+        return math.nan
+    for token in text.split("_"):
+        token = token.strip()
+        if token and token != "-":
+            try:
+                return float(token)
+            except Exception:
+                continue
+    return math.nan
+
+
+def _fetch_twse_mis_realtime(symbol: str) -> Optional[Dict]:
+    # 官方來源優先：TWSE MIS 同時支援上市/上櫃即時欄位
+    headers = {
+        **_default_headers(),
+        "Referer": "https://mis.twse.com.tw/stock/index.jsp",
+    }
+    for ex in ("tse", "otc"):
+        try:
+            url = "https://mis.twse.com.tw/stock/api/getStockInfo.jsp"
+            params = {"ex_ch": f"{ex}_{symbol}.tw", "json": 1, "delay": 0}
+            res = requests.get(url, params=params, headers=headers, timeout=8)
+            data = res.json() if res.ok else {}
+            row = ((data or {}).get("msgArray") or [None])[0] or {}
+            last = _parse_mixed_price(row.get("z"))
+            open_ = _parse_mixed_price(row.get("o"))
+            high = _parse_mixed_price(row.get("h"))
+            low = _parse_mixed_price(row.get("l"))
+            vol = _parse_mixed_price(row.get("v"))
+            if not any(pd.isna([last, open_, high, low])):
+                return {
+                    "last": float(last),
+                    "open": float(open_),
+                    "high": float(high),
+                    "low": float(low),
+                    "volume": 0.0 if pd.isna(vol) else float(vol),
+                }
+        except Exception:
+            continue
+    return None
+
+
 def fetch_realtime(symbol: str) -> Optional[Dict]:
-    # 優先：Yahoo quote API（類似主流行情站的即時拉取方式）
+    # 優先官方 TWSE/TPEX 公開來源，降低對單一路徑依賴
+    official_rt = _fetch_twse_mis_realtime(symbol)
+    if official_rt is not None:
+        return official_rt
+
+    # fallback：Yahoo quote API（best-effort）
     try:
         url = "https://query1.finance.yahoo.com/v7/finance/quote"
         res = requests.get(url, params={"symbols": f"{symbol}.TW"}, headers=_default_headers(), timeout=10)
