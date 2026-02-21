@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r71"
+APP_VERSION = "2026-02-21r72"
 
 
 # ----------------------------
@@ -452,7 +452,8 @@ def resolve_symbol(query: str, symbol_map: Dict[str, str]) -> Optional[str]:
         return m.group(1)
 
     q_lower = q.lower()
-    for code, name in symbol_map.items():
+    merged_map = {**LOCAL_SYMBOL_NAME_MAP, **(symbol_map or {})}
+    for code, name in merged_map.items():
         if q == code or q == f"{code} {name}":
             return code
         if q_lower in str(name).lower():
