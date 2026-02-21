@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r82"
+APP_VERSION = "2026-02-21r83"
 
 
 # ----------------------------
@@ -370,7 +370,7 @@ def get_tw_symbols(limit: int = 200, cache_buster: str = APP_VERSION) -> List[st
     headers = {"User-Agent": "Mozilla/5.0"}
 
     # 先放入本地股票池，確保外部來源全部失敗時仍可掃描/單檔查詢
-    items = get_base_pool()
+    items = [s for s in get_base_pool() if isinstance(s, str) and s.isdigit() and len(s) == 4]
     # 若本地池已足夠，直接回傳，避免冷啟動時依賴外部 API 造成「股票池不可用」
     if len(items) >= limit:
         return items[:limit]
@@ -419,11 +419,12 @@ def get_tw_symbols(limit: int = 200, cache_buster: str = APP_VERSION) -> List[st
     symbols = ensure_symbol_pool(symbols, min_size=20)
     if len(symbols) < 20:
         symbols = list(dict.fromkeys(symbols + get_base_pool() + EMERGENCY_SYMBOL_POOL))
-    symbols = symbols[:limit]
+
+    # 最終硬保底：不論外部來源狀態，回傳固定長度可掃描清單
+    symbols = pad_symbols_to_target(symbols, limit)
     if not symbols:
-        base_pool = list(dict.fromkeys(get_base_pool() + EMERGENCY_SYMBOL_POOL))
-        symbols = base_pool[: max(20, min(limit, len(base_pool)))]
-    return symbols
+        symbols = pad_symbols_to_target(get_base_pool() + EMERGENCY_SYMBOL_POOL, limit)
+    return symbols[:limit]
 
 
 @st.cache_data(ttl=600)
