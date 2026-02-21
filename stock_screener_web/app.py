@@ -19,7 +19,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r27"
+APP_VERSION = "2026-02-21r28"
 
 
 # ----------------------------
@@ -423,11 +423,16 @@ def resolve_symbol(query: str, symbol_map: Dict[str, str]) -> Optional[str]:
 
 
 def safe_get_tw_symbols(limit: int) -> List[str]:
+    target_n = max(20, int(limit or 20))
     try:
-        symbols = get_tw_symbols(limit=limit)
+        symbols = get_tw_symbols(limit=target_n)
     except Exception:
         symbols = []
-    return ensure_symbol_pool(symbols, min_size=max(20, int(limit or 20)))[: max(20, int(limit or 20))]
+
+    symbols = ensure_symbol_pool(symbols, min_size=target_n)
+    if not symbols:
+        symbols = get_base_pool()
+    return symbols[: max(20, min(target_n, len(symbols)))]
 
 
 @st.cache_data(ttl=1800)
