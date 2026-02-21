@@ -18,7 +18,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r10"
+APP_VERSION = "2026-02-21r11"
 
 
 # ----------------------------
@@ -622,30 +622,36 @@ else:
 
     rows = []
     fallback_history_count = 0
+    symbol_error_count = 0
     progress = st.progress(0, text="載入即時資料中...") if symbols else None
 
     for i, sym in enumerate(symbols, start=1):
-        daily = fetch_daily_history(sym)
-        rt = fetch_realtime(sym)
-        if daily is None or len(daily) < 120:
-            daily = generate_local_history(sym)
-            fallback_history_count += 1
+        try:
+            daily = fetch_daily_history(sym)
+            rt = fetch_realtime(sym)
+            if daily is None or len(daily) < 120:
+                daily = generate_local_history(sym)
+                fallback_history_count += 1
 
-        # 即時源偶發失敗時，改用最新日K收盤近似，避免整體清單為空
-        if rt is None:
-            last = daily.iloc[-1]
-            rt = {
-                "last": float(last["close"]),
-                "open": float(last["open"]),
-                "high": float(last["high"]),
-                "low": float(last["low"]),
-                "volume": float(last["volume"]),
-                "time": "fallback-daily",
-            }
+            # 即時源偶發失敗時，改用最新日K收盤近似，避免整體清單為空
+            if rt is None:
+                last = daily.iloc[-1]
+                rt = {
+                    "last": float(last["close"]),
+                    "open": float(last["open"]),
+                    "high": float(last["high"]),
+                    "low": float(last["low"]),
+                    "volume": float(last["volume"]),
+                    "time": "fallback-daily",
+                }
 
-        daily2 = upsert_today_bar(daily, rt)
-        daily2 = add_indicators(daily2)
-        result = score_symbol(daily2, market_aligned=True)
+            daily2 = upsert_today_bar(daily, rt)
+            daily2 = add_indicators(daily2)
+            result = score_symbol(daily2, market_aligned=True)
+        except Exception:
+            symbol_error_count += 1
+            daily2 = add_indicators(generate_local_history(sym))
+            result = score_symbol(daily2, market_aligned=True)
 
         reasons = "、".join(result["reasons"]) if result["reasons"] else "-"
         regime = "順勢" if "逆勢於大盤" not in reasons else "逆勢"
@@ -676,6 +682,8 @@ else:
 
     if fallback_history_count > 0:
         st.info(f"有 {fallback_history_count} 檔即時歷史來源不可用，已改用本地備援資料持續計算。")
+    if symbol_error_count > 0:
+        st.info(f"有 {symbol_error_count} 檔即時處理失敗，已自動以本地備援資料補齊。")
 
     if rows:
         market = pd.DataFrame(rows)
