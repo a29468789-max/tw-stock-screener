@@ -18,7 +18,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r18"
+APP_VERSION = "2026-02-21r19"
 
 
 # ----------------------------
@@ -612,9 +612,13 @@ else:
     # 雙重保底：不論外部來源狀態都維持可掃描清單，避免 UI 出現股票池不可用
     api_symbols = list(symbols)
     symbols = ensure_symbol_pool(symbols, min_size=max(20, universe_n))[: max(20, universe_n)]
+    degraded_pool_mode = False
     if not symbols:
         symbols = LOCAL_SYMBOL_POOL[: max(20, min(universe_n, len(LOCAL_SYMBOL_POOL)))]
+        degraded_pool_mode = True
     if not api_symbols:
+        degraded_pool_mode = True
+    if degraded_pool_mode:
         st.info("即時來源暫時不可用，已自動切換內建股票池繼續掃描。")
 
     rows = []
