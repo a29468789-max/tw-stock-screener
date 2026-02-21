@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r108"  # healthcheck: force cache refresh; keep local-first stock pool fallback active
+APP_VERSION = "2026-02-21r109"  # healthcheck: harden local-first universe; avoid remote pool dependency during startup
 
 
 # ----------------------------
@@ -726,10 +726,13 @@ if mode == "Mock示範":
 else:
     st.caption("即時來源若暫時不可用，系統會自動切換本地股票池與單檔備援查詢（不中斷、不顯示股票池不可用致命錯誤）。")
     st.info("健康檢查保底：若外部股票池/即時 API 失敗，仍會維持可掃描清單與單檔查詢。")
-    # Local-first：先準備本地可掃描清單，再 best-effort 疊加外部來源
+    # Local-first：先以本地池直接建立可掃描 universe（外部來源僅補強，不作為啟動前提）
     symbols_local = pad_symbols_to_target(get_base_pool(), max(20, universe_n))
+    symbols_remote: List[str] = []
     try:
-        symbols_remote = build_universe(universe_n)
+        # 僅在本地池不足時才嘗試外部補齊，避免上游短暫故障影響主流程
+        if len(symbols_local) < max(20, universe_n):
+            symbols_remote = build_universe(universe_n)
     except Exception:
         symbols_remote = []
     symbols = pad_symbols_to_target(
