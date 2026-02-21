@@ -3,7 +3,7 @@ headless = true
 enableCORS = false
 enableXsrfProtection = false
 port = 8501
-enableWebsocketCompression = true
+enableWebsocketCompression = false
 
 [browser]
 gatherUsageStats = false
