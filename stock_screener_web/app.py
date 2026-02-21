@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r1613"  # healthcheck: force redeploy to replace stale runtime showing stock-pool fatal alert
+APP_VERSION = "2026-02-21r1615"  # healthcheck: force redeploy to replace stale runtime showing stock-pool fatal alert
 
 
 # ----------------------------
