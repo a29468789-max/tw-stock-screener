@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r110"  # healthcheck: force-refresh cache/build after local-first hardening rollout
+APP_VERSION = "2026-02-21r111"  # healthcheck: redeploy trigger + cache refresh to clear legacy remote-pool error page
 
 
 # ----------------------------
