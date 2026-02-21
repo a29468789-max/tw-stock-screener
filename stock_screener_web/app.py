@@ -19,7 +19,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r29"
+APP_VERSION = "2026-02-21r30"
 
 
 # ----------------------------
@@ -299,12 +299,18 @@ LOCAL_SYMBOL_NAME_MAP: Dict[str, str] = {
 
 LOCAL_SYMBOL_POOL: List[str] = sorted(set(CORE_SYMBOLS + list(LOCAL_SYMBOL_NAME_MAP.keys())))
 # 最後保底：即使本地池被誤改為空，仍可維持單檔與清單查詢
-EMERGENCY_SYMBOL_POOL: List[str] = ["2330", "2317", "2454", "2303", "2882", "2603", "1301", "1101"]
+EMERGENCY_SYMBOL_POOL: List[str] = [
+    "2330", "2317", "2454", "2303", "2882", "2603", "1301", "1101", "2382", "2308",
+    "2412", "2881", "2891", "2886", "3045", "4904", "5880", "2002", "1216", "2912",
+]
 
 
 def get_base_pool() -> List[str]:
-    pool = LOCAL_SYMBOL_POOL.copy() if LOCAL_SYMBOL_POOL else EMERGENCY_SYMBOL_POOL.copy()
+    # 優先本地池，其次核心清單，再次緊急池；確保至少有可掃描 universe
+    pool = LOCAL_SYMBOL_POOL.copy() if LOCAL_SYMBOL_POOL else CORE_SYMBOLS.copy()
     pool = [s for s in pool if isinstance(s, str) and s.isdigit() and len(s) == 4]
+    if len(pool) < 20:
+        pool = list(dict.fromkeys(pool + CORE_SYMBOLS + EMERGENCY_SYMBOL_POOL))
     if not pool:
         pool = EMERGENCY_SYMBOL_POOL.copy()
     return list(dict.fromkeys(pool))
