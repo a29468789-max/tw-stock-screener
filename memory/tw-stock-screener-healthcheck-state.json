@@ -1,0 +1,7 @@
+{
+  "staleDeployCount": 0,
+  "status": "healthy",
+  "build": "2026-02-22-yahoo-direct-v1",
+  "lastRun": "2026-02-22T01:28:00+08:00",
+  "reason": "web_fetch homepage + /_stcore/health OK; browser evaluate confirms non-blank app, no \"無法取得台股股票池\", and has query/list blocks"
+}
