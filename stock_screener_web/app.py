@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r1937-healthcheck-autofix18"  # healthcheck auto-repair bump: force redeploy/cache-bust + enforce local-pool + single-symbol fallback path during upstream pool outages
+APP_VERSION = "2026-02-21r1942-healthcheck-autofix19"  # healthcheck auto-repair bump: force redeploy/cache-bust + keep local-pool + single-symbol fallback active during upstream pool outages
 
 
 # ----------------------------
