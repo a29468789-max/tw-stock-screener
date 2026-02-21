@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r2201-healthcheck-autofix73"  # healthcheck auto-repair bump: force Render redeploy/cache-bust to replace stale instances that still show pool-unavailable alert
+APP_VERSION = "2026-02-22-yahoo-direct-v1"
 
 
 # ----------------------------
@@ -521,8 +521,46 @@ def build_universe(limit: int) -> List[str]:
     return symbols
 
 
+def _default_headers() -> Dict[str, str]:
+    # 參考一般行情網站連線模式：穩定 UA + 語系，降低被來源拒絕機率
+    return {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "application/json,text/plain,*/*",
+        "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
+    }
+
+
 @st.cache_data(ttl=1800)
 def fetch_daily_history(symbol: str, months_back: int = 30) -> Optional[pd.DataFrame]:
+    # 優先：直接打 Yahoo chart API（比 yfinance wrapper 更可控）
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}.TW"
+        params = {"range": "3y", "interval": "1d", "events": "history", "includeAdjustedClose": "true"}
+        res = requests.get(url, params=params, headers=_default_headers(), timeout=12)
+        data = res.json() if res.ok else {}
+        result = (((data or {}).get("chart") or {}).get("result") or [None])[0] or {}
+        ts = result.get("timestamp") or []
+        quote = (((result.get("indicators") or {}).get("quote") or [None])[0] or {})
+        o, h, l, c, v = quote.get("open", []), quote.get("high", []), quote.get("low", []), quote.get("close", []), quote.get("volume", [])
+        rows = []
+        for i in range(min(len(ts), len(o), len(h), len(l), len(c), len(v))):
+            if any(x is None for x in (o[i], h[i], l[i], c[i], v[i])):
+                continue
+            rows.append(
+                {
+                    "date": pd.to_datetime(int(ts[i]), unit="s").tz_localize(None),
+                    "open": float(o[i]),
+                    "high": float(h[i]),
+                    "low": float(l[i]),
+                    "close": float(c[i]),
+                    "volume": float(v[i]),
+                }
+            )
+        if rows:
+            return pd.DataFrame(rows).sort_values("date").reset_index(drop=True)
+    except Exception:
+        pass
+
     # twstock 路徑
     if twstock is not None:
         try:
@@ -566,6 +604,28 @@ def fetch_daily_history(symbol: str, months_back: int = 30) -> Optional[pd.DataF
 
 
 def fetch_realtime(symbol: str) -> Optional[Dict]:
+    # 優先：Yahoo quote API（類似主流行情站的即時拉取方式）
+    try:
+        url = "https://query1.finance.yahoo.com/v7/finance/quote"
+        res = requests.get(url, params={"symbols": f"{symbol}.TW"}, headers=_default_headers(), timeout=10)
+        data = res.json() if res.ok else {}
+        q = (((data or {}).get("quoteResponse") or {}).get("result") or [None])[0] or {}
+        last = q.get("regularMarketPrice")
+        open_ = q.get("regularMarketOpen")
+        high = q.get("regularMarketDayHigh")
+        low = q.get("regularMarketDayLow")
+        vol = q.get("regularMarketVolume")
+        if all(x is not None for x in (last, open_, high, low)):
+            return {
+                "last": float(last),
+                "open": float(open_),
+                "high": float(high),
+                "low": float(low),
+                "volume": float(vol or 0),
+            }
+    except Exception:
+        pass
+
     # twstock 路徑
     if twstock is not None:
         try:
