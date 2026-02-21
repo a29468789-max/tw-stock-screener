@@ -19,7 +19,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r45"
+APP_VERSION = "2026-02-21r46"
 
 
 # ----------------------------
@@ -324,6 +324,17 @@ def ensure_symbol_pool(symbols: List[str], min_size: int = 20) -> List[str]:
     return merged
 
 
+def fetch_json_with_retries(url: str, headers: Dict[str, str], retries: int = 2, timeout: int = 8):
+    for _ in range(max(1, retries)):
+        try:
+            res = requests.get(url, timeout=timeout, headers=headers)
+            if res.ok:
+                return res.json()
+        except Exception:
+            pass
+    return []
+
+
 @st.cache_data(ttl=3600)
 def get_tw_symbols(limit: int = 200) -> List[str]:
     # 保底至少能支撐 sidebar 預設掃描檔數，避免回傳空清單
@@ -345,30 +356,32 @@ def get_tw_symbols(limit: int = 200) -> List[str]:
         except Exception:
             pass
 
-    # fallback 1: 上市
-    try:
-        res = requests.get("https://openapi.twse.com.tw/v1/opendata/t187ap03_L", timeout=8, headers=headers)
-        data = res.json() if res.ok else []
-        for row in data:
+    # fallback 1: 上市（雙來源 + 重試）
+    twse_urls = [
+        "https://openapi.twse.com.tw/v1/opendata/t187ap03_L",
+        "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL",
+    ]
+    for url in twse_urls:
+        data = fetch_json_with_retries(url, headers=headers, retries=2, timeout=8)
+        for row in data if isinstance(data, list) else []:
             for v in row.values():
                 if isinstance(v, str) and v.isdigit() and len(v) == 4:
                     items.append(v)
                     break
-    except Exception:
-        pass
 
-    # fallback 2: 上櫃
-    try:
-        res = requests.get("https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes", timeout=8, headers=headers)
-        data = res.json() if res.ok else []
-        for row in data:
+    # fallback 2: 上櫃（雙來源 + 重試）
+    tpex_urls = [
+        "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes",
+        "https://www.tpex.org.tw/openapi/v1/tpex_esb_capitals_rank",
+    ]
+    for url in tpex_urls:
+        data = fetch_json_with_retries(url, headers=headers, retries=2, timeout=8)
+        for row in data if isinstance(data, list) else []:
             for key in ("SecuritiesCompanyCode", "Code", "股票代號"):
                 v = row.get(key)
                 if isinstance(v, str) and v.isdigit() and len(v) == 4:
                     items.append(v)
                     break
-    except Exception:
-        pass
 
     # 以首次出現順序去重，保留本地池優先可用性
     symbols = list(dict.fromkeys(items))
