@@ -18,7 +18,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r22"
+APP_VERSION = "2026-02-21r23"
 
 
 # ----------------------------
@@ -297,12 +297,19 @@ LOCAL_SYMBOL_NAME_MAP: Dict[str, str] = {
 }
 
 LOCAL_SYMBOL_POOL: List[str] = sorted(set(CORE_SYMBOLS + list(LOCAL_SYMBOL_NAME_MAP.keys())))
+# 最後保底：即使本地池被誤改為空，仍可維持單檔與清單查詢
+EMERGENCY_SYMBOL_POOL: List[str] = ["2330", "2317", "2454", "2303", "2882", "2603", "1301", "1101"]
+
+
+def get_base_pool() -> List[str]:
+    return LOCAL_SYMBOL_POOL.copy() if LOCAL_SYMBOL_POOL else EMERGENCY_SYMBOL_POOL.copy()
 
 
 def ensure_symbol_pool(symbols: List[str], min_size: int = 20) -> List[str]:
-    merged = list(dict.fromkeys((symbols or []) + LOCAL_SYMBOL_POOL))
+    base_pool = get_base_pool()
+    merged = list(dict.fromkeys((symbols or []) + base_pool))
     if len(merged) < min_size:
-        return LOCAL_SYMBOL_POOL.copy()
+        return base_pool.copy()
     return merged
 
 
@@ -313,7 +320,7 @@ def get_tw_symbols(limit: int = 200) -> List[str]:
     headers = {"User-Agent": "Mozilla/5.0"}
 
     # 先放入本地股票池，確保外部來源全部失敗時仍可掃描/單檔查詢
-    items = LOCAL_SYMBOL_POOL.copy()
+    items = get_base_pool()
 
     # 優先用 twstock；若不可用，再補公開 API（best-effort）
     if twstock is not None:
@@ -357,7 +364,8 @@ def get_tw_symbols(limit: int = 200) -> List[str]:
     symbols = ensure_symbol_pool(symbols, min_size=20)
     symbols = symbols[:limit]
     if not symbols:
-        symbols = LOCAL_SYMBOL_POOL[: max(20, min(limit, len(LOCAL_SYMBOL_POOL)))]
+        base_pool = get_base_pool()
+        symbols = base_pool[: max(20, min(limit, len(base_pool)))]
     return symbols
 
 
@@ -614,7 +622,8 @@ else:
     symbols = ensure_symbol_pool(symbols, min_size=max(20, universe_n))[: max(20, universe_n)]
     degraded_pool_mode = False
     if not symbols:
-        symbols = LOCAL_SYMBOL_POOL[: max(20, min(universe_n, len(LOCAL_SYMBOL_POOL)))]
+        base_pool = get_base_pool()
+        symbols = base_pool[: max(20, min(universe_n, len(base_pool)))]
         degraded_pool_mode = True
     if not api_symbols:
         degraded_pool_mode = True
@@ -690,7 +699,8 @@ else:
         market = pd.DataFrame(rows)
     elif symbols:
         st.warning("目前抓不到可用即時資料，已改用本地股票池與歷史備援資料持續服務。")
-        fallback_symbols = LOCAL_SYMBOL_POOL[: max(20, min(universe_n, len(LOCAL_SYMBOL_POOL)))]
+        base_pool = get_base_pool()
+        fallback_symbols = base_pool[: max(20, min(universe_n, len(base_pool)))]
         fallback_rows = []
         for sym in fallback_symbols:
             daily = add_indicators(generate_local_history(sym))
@@ -719,7 +729,8 @@ else:
 if market is None or market.empty:
     st.warning("即時來源異常，已切換本地股票池保底模式。")
     emergency_rows = []
-    for sym in LOCAL_SYMBOL_POOL[: max(20, min(universe_n, len(LOCAL_SYMBOL_POOL)))]: 
+    base_pool = get_base_pool()
+    for sym in base_pool[: max(20, min(universe_n, len(base_pool)))]: 
         daily = add_indicators(generate_local_history(sym))
         result = score_symbol(daily, market_aligned=True)
         reasons = "、".join(result["reasons"]) if result["reasons"] else "-"
