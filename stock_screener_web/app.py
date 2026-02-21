@@ -19,7 +19,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r32"
+APP_VERSION = "2026-02-21r33"
 
 
 # ----------------------------
@@ -441,6 +441,22 @@ def safe_get_tw_symbols(limit: int) -> List[str]:
     return symbols[: max(20, min(target_n, len(symbols)))]
 
 
+def build_universe(limit: int) -> List[str]:
+    target_n = max(20, int(limit or 20))
+    base_pool = get_base_pool()
+    try:
+        symbols = safe_get_tw_symbols(limit=target_n)
+    except Exception:
+        symbols = []
+
+    symbols = [s for s in (symbols or []) if isinstance(s, str) and s.isdigit() and len(s) == 4]
+    if len(symbols) < target_n:
+        symbols = list(dict.fromkeys(symbols + base_pool + EMERGENCY_SYMBOL_POOL))
+    if not symbols:
+        symbols = base_pool or EMERGENCY_SYMBOL_POOL.copy()
+    return symbols[: max(20, min(target_n, len(symbols)))]
+
+
 @st.cache_data(ttl=1800)
 def fetch_daily_history(symbol: str, months_back: int = 30) -> Optional[pd.DataFrame]:
     # twstock 路徑
@@ -639,22 +655,8 @@ if mode == "Mock示範":
     market = generate_mock_snapshot(n=universe_n, seed=42)
 else:
     st.caption("即時來源若暫時不可用，系統會自動切換本地股票池與單檔備援查詢（不中斷、不顯示股票池不可用致命錯誤）。")
-    try:
-        symbols = safe_get_tw_symbols(limit=universe_n)
-    except Exception:
-        symbols = get_base_pool()[: max(20, universe_n)]
+    symbols = build_universe(universe_n)
     # 雙重保底：不論外部來源狀態都維持可掃描清單，避免 UI 出現股票池不可用
-    api_symbols = list(symbols)
-    symbols = ensure_symbol_pool(symbols, min_size=max(20, universe_n))[: max(20, universe_n)]
-    degraded_pool_mode = False
-    if not symbols:
-        base_pool = get_base_pool()
-        symbols = base_pool[: max(20, min(universe_n, len(base_pool)))]
-        degraded_pool_mode = True
-    if not api_symbols:
-        degraded_pool_mode = True
-    if degraded_pool_mode:
-        st.info("即時來源暫時不可用，已自動切換內建股票池繼續掃描。")
 
     rows = []
     fallback_history_count = 0
