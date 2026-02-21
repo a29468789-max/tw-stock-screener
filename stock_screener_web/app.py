@@ -18,7 +18,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21p"
+APP_VERSION = "2026-02-21q"
 
 
 # ----------------------------
@@ -655,8 +655,31 @@ else:
     if rows:
         market = pd.DataFrame(rows)
     elif symbols:
-        st.warning("目前抓不到可用即時資料，已自動切換 Mock 示範資料。")
-        market = generate_mock_snapshot(n=universe_n, seed=42)
+        st.warning("目前抓不到可用即時資料，已改用本地股票池與歷史備援資料持續服務。")
+        fallback_symbols = CORE_SYMBOLS[: max(20, min(universe_n, len(CORE_SYMBOLS)))]
+        fallback_rows = []
+        for sym in fallback_symbols:
+            daily = add_indicators(generate_local_history(sym))
+            result = score_symbol(daily, market_aligned=True)
+            reasons = "、".join(result["reasons"]) if result["reasons"] else "-"
+            regime = "順勢" if "逆勢於大盤" not in reasons else "逆勢"
+            risk = "低" if result["reversal_risk"] < 0.25 else "中" if result["reversal_risk"] < 0.5 else "高"
+            fallback_rows.append(
+                {
+                    "代碼": sym,
+                    "名稱": symbol_map.get(sym, sym),
+                    "狀態": result["state"],
+                    "TrendScore": result["trend_score"],
+                    "Confidence": result["confidence"],
+                    "ReversalRisk": result["reversal_risk"],
+                    "建議": result["action"],
+                    "策略摘要": reasons,
+                    "順逆勢": regime,
+                    "風險": risk,
+                    "_detail": result,
+                }
+            )
+        market = pd.DataFrame(fallback_rows)
 
 c1, c2, c3 = st.columns(3)
 with c1:
