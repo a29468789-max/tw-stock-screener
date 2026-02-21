@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r1638"  # healthcheck auto-bump: detected pool fetch alert on prod; trigger redeploy with local-first fallback guards
+APP_VERSION = "2026-02-21r1639"  # healthcheck auto-bump: prod still surfaced pool-fetch alert; force redeploy with existing local-first fallback guards
 
 
 # ----------------------------
