@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-22-startup-hardening-v1"
+APP_VERSION = "2026-02-22-startup-hardening-v2"
 
 
 # ----------------------------
@@ -802,12 +802,16 @@ with st.sidebar:
     st.caption("真實模式建議每 10~20 秒重新整理一次，避免資料源壓力。")
 
 symbol_map = {**{s: s for s in CORE_SYMBOLS}, **LOCAL_SYMBOL_NAME_MAP}
-try:
-    remote_symbol_map = get_symbol_name_map(limit=max(120, universe_n * 2), cache_buster=APP_VERSION)
-    if remote_symbol_map:
-        symbol_map.update(remote_symbol_map)
-except Exception:
-    pass
+# 啟動健康優先：首屏預設只用本地名稱表，避免冷啟動額外網路請求拖慢連線建立。
+# 若需遠端名稱補齊，可透過環境變數 ENABLE_REMOTE_SYMBOL_MAP=1 開啟。
+enable_remote_symbol_map = str(__import__("os").environ.get("ENABLE_REMOTE_SYMBOL_MAP", "0")).strip() == "1"
+if enable_remote_symbol_map:
+    try:
+        remote_symbol_map = get_symbol_name_map(limit=max(120, universe_n * 2), cache_buster=APP_VERSION)
+        if remote_symbol_map:
+            symbol_map.update(remote_symbol_map)
+    except Exception:
+        pass
 
 # 硬保底：名稱對照不可為空，避免外部來源異常時單檔查詢退化
 if not symbol_map:
