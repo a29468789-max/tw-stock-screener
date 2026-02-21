@@ -18,7 +18,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r9"
+APP_VERSION = "2026-02-21r10"
 
 
 # ----------------------------
@@ -370,7 +370,7 @@ def get_tw_symbols(limit: int = 200) -> List[str]:
 @st.cache_data(ttl=3600)
 def get_symbol_name_map(limit: int = 4000) -> Dict[str, str]:
     out: Dict[str, str] = {}
-    symbols = get_tw_symbols(limit=limit)
+    symbols = safe_get_tw_symbols(limit=limit)
 
     for s in symbols:
         out[s] = LOCAL_SYMBOL_NAME_MAP.get(s, s)
@@ -407,6 +407,14 @@ def resolve_symbol(query: str, symbol_map: Dict[str, str]) -> Optional[str]:
         if q_lower in str(name).lower():
             return code
     return None
+
+
+def safe_get_tw_symbols(limit: int) -> List[str]:
+    try:
+        symbols = get_tw_symbols(limit=limit)
+    except Exception:
+        symbols = []
+    return ensure_symbol_pool(symbols, min_size=max(20, int(limit or 20)))[: max(20, int(limit or 20))]
 
 
 @st.cache_data(ttl=1800)
@@ -605,10 +613,7 @@ except Exception:
 if mode == "Mock示範":
     market = generate_mock_snapshot(n=universe_n, seed=42)
 else:
-    try:
-        symbols = get_tw_symbols(limit=universe_n)
-    except Exception:
-        symbols = []
+    symbols = safe_get_tw_symbols(limit=universe_n)
     # 雙重保底：不論外部來源狀態都維持可掃描清單，避免 UI 出現股票池不可用
     api_symbols = list(symbols)
     symbols = ensure_symbol_pool(symbols, min_size=max(20, universe_n))[: max(20, universe_n)]
