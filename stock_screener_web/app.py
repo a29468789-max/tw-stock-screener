@@ -637,7 +637,7 @@ except Exception:
 if mode == "Mock示範":
     market = generate_mock_snapshot(n=universe_n, seed=42)
 else:
-    st.caption("即時來源若暫時不可用，系統會自動切換本地股票池與單檔備援查詢。")
+    st.caption("即時來源若暫時不可用，系統會自動切換本地股票池與單檔備援查詢（不中斷、不顯示股票池不可用致命錯誤）。")
     symbols = safe_get_tw_symbols(limit=universe_n)
     # 雙重保底：不論外部來源狀態都維持可掃描清單，避免 UI 出現股票池不可用
     api_symbols = list(symbols)
