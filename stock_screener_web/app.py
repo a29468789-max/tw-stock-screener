@@ -18,7 +18,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r4"
+APP_VERSION = "2026-02-21r5"
 
 
 # ----------------------------
@@ -596,7 +596,7 @@ else:
     api_symbols = list(symbols)
     symbols = list(dict.fromkeys((symbols or []) + LOCAL_SYMBOL_POOL))[: max(20, universe_n)]
     if not api_symbols:
-        st.info("即時股票池服務暫時不可用，已改用內建股票池繼續掃描。")
+        st.info("即時來源暫時不可用，已自動切換內建股票池繼續掃描。")
 
     rows = []
     fallback_history_count = 0
