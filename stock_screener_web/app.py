@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r1624"  # healthcheck auto-bump: refresh cache/redeploy; enforce local-first symbol pool fallback
+APP_VERSION = "2026-02-21r1625"  # healthcheck auto-bump: refresh cache/redeploy; enforce local-first symbol pool fallback
 
 
 # ----------------------------
