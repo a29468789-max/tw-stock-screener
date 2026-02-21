@@ -19,7 +19,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r38"
+APP_VERSION = "2026-02-21r39"
 
 
 # ----------------------------
@@ -658,10 +658,13 @@ else:
     st.caption("即時來源若暫時不可用，系統會自動切換本地股票池與單檔備援查詢（不中斷、不顯示股票池不可用致命錯誤）。")
     st.info("健康檢查保底：若外部股票池/即時 API 失敗，仍會維持可掃描清單與單檔查詢。")
     symbols = build_universe(universe_n)
+    symbols = ensure_symbol_pool(symbols, min_size=max(20, universe_n))[: max(20, universe_n)]
     # 額外硬保底：若發生任何非預期狀態導致清單為空，立刻回填本地池
     if not symbols:
         symbols = get_base_pool()[: max(20, min(universe_n, len(get_base_pool())))]
         st.info("股票池來源暫時異常，已自動切換本地股票池持續服務。")
+    elif len(symbols) < max(20, universe_n):
+        st.info("股票池來源部分異常，已補齊本地股票池以維持完整掃描。")
     # 雙重保底：不論外部來源狀態都維持可掃描清單，避免 UI 出現股票池不可用
 
     rows = []
