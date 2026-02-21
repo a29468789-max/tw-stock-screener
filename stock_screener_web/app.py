@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r79"
+APP_VERSION = "2026-02-21r80"
 
 
 # ----------------------------
@@ -309,6 +309,8 @@ EMERGENCY_SYMBOL_POOL: List[str] = [
 def get_base_pool() -> List[str]:
     # 優先本地池，其次核心清單，再次緊急池；確保至少有可掃描 universe
     pool = LOCAL_SYMBOL_POOL.copy() if LOCAL_SYMBOL_POOL else CORE_SYMBOLS.copy()
+    # 硬補強：即使 LOCAL_SYMBOL_POOL 被誤改，也持續把本地名稱表中的代碼補回
+    pool = list(dict.fromkeys(pool + list(LOCAL_SYMBOL_NAME_MAP.keys())))
     pool = [s for s in pool if isinstance(s, str) and s.isdigit() and len(s) == 4]
     if len(pool) < 20:
         pool = list(dict.fromkeys(pool + CORE_SYMBOLS + EMERGENCY_SYMBOL_POOL))
