@@ -19,7 +19,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r36"
+APP_VERSION = "2026-02-21r37"
 
 
 # ----------------------------
@@ -636,7 +636,8 @@ st.caption(f"build {APP_VERSION}")
 
 with st.sidebar:
     st.header("資料模式")
-    mode = st.radio("選擇", ["真實台股即時", "Mock示範"], index=1)
+    # 預設以真實模式啟動，健康檢查可直接驗證外部來源與保底機制
+    mode = st.radio("選擇", ["真實台股即時", "Mock示範"], index=0)
     universe_n = st.slider("掃描檔數", 20, 300, 40, 10)
     topn = st.slider("排行榜 TopN", 5, 30, 10, 1)
     refresh_sec = st.slider("建議手動刷新秒數", 5, 60, 10, 5)
