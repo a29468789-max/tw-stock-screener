@@ -2,6 +2,6 @@
   "staleDeployCount": 0,
   "status": "healthy",
   "build": "2026-02-22-yahoo-direct-v1",
-  "lastRun": "2026-02-22T02:47:00+08:00",
-  "reason": "web_fetch homepage + /_stcore/health OK; browser snapshot confirms non-blank interactive app, query/list controls present, and no '無法取得台股股票池'"
+  "lastRun": "2026-02-22T03:01:00+08:00",
+  "reason": "web_fetch homepage + /_stcore/health OK; browser snapshot confirms non-blank interactive app with data mode radios/sliders and no '無法取得台股股票池'"
 }
