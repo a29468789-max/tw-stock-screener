@@ -18,7 +18,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21o"
+APP_VERSION = "2026-02-21p"
 
 
 # ----------------------------
@@ -596,15 +596,15 @@ else:
         st.info("即時股票池服務暫時不可用，已改用內建股票池繼續掃描。")
 
     rows = []
+    fallback_history_count = 0
     progress = st.progress(0, text="載入即時資料中...") if symbols else None
 
     for i, sym in enumerate(symbols, start=1):
         daily = fetch_daily_history(sym)
         rt = fetch_realtime(sym)
         if daily is None or len(daily) < 120:
-            if progress is not None:
-                progress.progress(i / len(symbols), text=f"{i}/{len(symbols)}")
-            continue
+            daily = generate_local_history(sym)
+            fallback_history_count += 1
 
         # 即時源偶發失敗時，改用最新日K收盤近似，避免整體清單為空
         if rt is None:
@@ -648,6 +648,9 @@ else:
 
     if progress is not None:
         progress.empty()
+
+    if fallback_history_count > 0:
+        st.info(f"有 {fallback_history_count} 檔即時歷史來源不可用，已改用本地備援資料持續計算。")
 
     if rows:
         market = pd.DataFrame(rows)
@@ -737,22 +740,23 @@ if manual_q:
     else:
         daily_m = fetch_daily_history(resolved)
         if daily_m is None or len(daily_m) < 120:
-            st.error(f"{resolved} 目前抓不到足夠歷史資料。")
-        else:
-            rt_m = fetch_realtime(resolved)
-            if rt_m is None:
-                b = daily_m.iloc[-1]
-                rt_m = {
-                    "last": float(b["close"]),
-                    "open": float(b["open"]),
-                    "high": float(b["high"]),
-                    "low": float(b["low"]),
-                    "volume": float(b["volume"]),
-                }
-            df_m = add_indicators(upsert_today_bar(daily_m, rt_m))
-            d_m = score_symbol(df_m, market_aligned=True)
-            st.info(f"{resolved} {symbol_map.get(resolved, resolved)} | 狀態：{d_m['state']} | 建議：{d_m['action']}")
-            st.write(f"進場參考：{d_m.get('entry', 'N/A')}")
-            st.write(f"停損：{d_m.get('stop_loss', 'N/A')} | 停利：{d_m.get('take_profit', 'N/A')}")
+            daily_m = generate_local_history(resolved)
+            st.info(f"{resolved} 歷史來源暫時不可用，已改用本地備援資料。")
+
+        rt_m = fetch_realtime(resolved)
+        if rt_m is None:
+            b = daily_m.iloc[-1]
+            rt_m = {
+                "last": float(b["close"]),
+                "open": float(b["open"]),
+                "high": float(b["high"]),
+                "low": float(b["low"]),
+                "volume": float(b["volume"]),
+            }
+        df_m = add_indicators(upsert_today_bar(daily_m, rt_m))
+        d_m = score_symbol(df_m, market_aligned=True)
+        st.info(f"{resolved} {symbol_map.get(resolved, resolved)} | 狀態：{d_m['state']} | 建議：{d_m['action']}")
+        st.write(f"進場參考：{d_m.get('entry', 'N/A')}")
+        st.write(f"停損：{d_m.get('stop_loss', 'N/A')} | 停利：{d_m.get('take_profit', 'N/A')}")
 
 st.caption(f"已載入 {len(market)} 檔。建議每 {refresh_sec} 秒手動刷新，獲得盤中最新狀態。")
