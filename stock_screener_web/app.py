@@ -19,7 +19,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r31"
+APP_VERSION = "2026-02-21r32"
 
 
 # ----------------------------
@@ -634,11 +634,15 @@ try:
 except Exception:
     pass
 
+market = pd.DataFrame()
 if mode == "Mock示範":
     market = generate_mock_snapshot(n=universe_n, seed=42)
 else:
     st.caption("即時來源若暫時不可用，系統會自動切換本地股票池與單檔備援查詢（不中斷、不顯示股票池不可用致命錯誤）。")
-    symbols = safe_get_tw_symbols(limit=universe_n)
+    try:
+        symbols = safe_get_tw_symbols(limit=universe_n)
+    except Exception:
+        symbols = get_base_pool()[: max(20, universe_n)]
     # 雙重保底：不論外部來源狀態都維持可掃描清單，避免 UI 出現股票池不可用
     api_symbols = list(symbols)
     symbols = ensure_symbol_pool(symbols, min_size=max(20, universe_n))[: max(20, universe_n)]
