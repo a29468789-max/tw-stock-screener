@@ -19,7 +19,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r55"
+APP_VERSION = "2026-02-21r56"
 
 
 # ----------------------------
@@ -335,7 +335,7 @@ def fetch_json_with_retries(url: str, headers: Dict[str, str], retries: int = 2,
     return []
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=300)
 def get_tw_symbols(limit: int = 200) -> List[str]:
     # 保底至少能支撐 sidebar 預設掃描檔數，避免回傳空清單
     limit = max(int(limit or 0), 20)
@@ -395,7 +395,7 @@ def get_tw_symbols(limit: int = 200) -> List[str]:
     return symbols
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=600)
 def get_symbol_name_map(limit: int = 4000) -> Dict[str, str]:
     out: Dict[str, str] = {}
     symbols = safe_get_tw_symbols(limit=limit)
