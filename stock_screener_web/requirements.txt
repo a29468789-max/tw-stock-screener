@@ -1,7 +1,7 @@
-streamlit==1.41.1
+streamlit==1.32.2
 pandas>=2.2.0
 numpy>=2.2.0
 requests>=2.32.3
 yfinance>=0.2.54
 twstock>=1.4.0
-tornado>=6.4,<6.5
+tornado>=6.3,<6.5
