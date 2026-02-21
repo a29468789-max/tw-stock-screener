@@ -1,8 +1,8 @@
 {
   "service": "https://tw-stock-screener.onrender.com",
-  "lastCheckAt": "2026-02-22T06:20:41+08:00",
+  "lastCheckAt": "2026-02-22T06:36:00+08:00",
   "lastHealth": "healthy",
-  "lastReason": "UI content present with interactive sections; /_stcore/health=ok; no stock-pool error text",
+  "lastReason": "UI content present with interactive controls; no stock-pool error text; /_stcore/health=ok",
   "lastBuildText": "build 2026-02-22-yahoo-direct-v1",
   "pendingDeployStaleRounds": 0,
   "lastFixCommit": null
