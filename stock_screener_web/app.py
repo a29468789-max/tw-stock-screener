@@ -1,5 +1,6 @@
 import datetime as dt
 import math
+import re
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -399,8 +400,14 @@ def resolve_symbol(query: str, symbol_map: Dict[str, str]) -> Optional[str]:
     if not q:
         return None
 
-    if q.isdigit() and len(q) == 4 and q in symbol_map:
+    # 即使名稱對照來源失敗，也允許使用者以 4 碼代號直接查詢
+    if q.isdigit() and len(q) == 4:
         return q
+
+    # 容錯：支援「2330 台積電」這類混合輸入
+    m = re.search(r"(?<!\d)(\d{4})(?!\d)", q)
+    if m:
+        return m.group(1)
 
     q_lower = q.lower()
     for code, name in symbol_map.items():
