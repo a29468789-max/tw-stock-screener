@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-22-yahoo-direct-v1"
+APP_VERSION = "2026-02-22-startup-hardening-v1"
 
 
 # ----------------------------
@@ -377,17 +377,8 @@ def get_tw_symbols(limit: int = 200, cache_buster: str = APP_VERSION) -> List[st
     if items:
         return pad_symbols_to_target(items, limit)
 
-    # 優先用 twstock；若不可用，再補公開 API（best-effort）
-    if twstock is not None:
-        try:
-            for code, info in twstock.codes.items():
-                if not code.isdigit() or len(code) != 4:
-                    continue
-                if getattr(info, "type", "") != "股票":
-                    continue
-                items.append(code)
-        except Exception:
-            pass
+    # 啟動穩定性優先：避免冷啟動時掃描 twstock 全市場造成首屏阻塞
+    # twstock 僅保留在個股歷史/即時 fallback，不作為清單來源初始化必經路徑
 
     # fallback 1: 上市（雙來源 + 重試）
     twse_urls = [
@@ -446,17 +437,8 @@ def get_symbol_name_map(limit: int = 800, cache_buster: str = APP_VERSION) -> Di
     for code, name in LOCAL_SYMBOL_NAME_MAP.items():
         out[code] = name
 
-    if twstock is not None:
-        try:
-            for code, info in twstock.codes.items():
-                if not code.isdigit() or len(code) != 4:
-                    continue
-                if getattr(info, "type", "") != "股票":
-                    continue
-                out[code] = getattr(info, "name", code) or code
-        except Exception:
-            pass
-
+    # 啟動穩定性優先：不在首屏前做 twstock 全市場名稱掃描，
+    # 避免資源受限平台出現長時間 skeleton。名稱不足時維持 code 顯示即可。
     return out
 
 
@@ -814,14 +796,14 @@ with st.sidebar:
     st.header("資料模式")
     # 預設改為穩定模式，避免外部來源波動造成整體不可用
     mode = st.radio("選擇", ["穩定查詢（不依賴外部）", "真實台股即時", "Mock示範"], index=0)
-    universe_n = st.slider("掃描檔數", 20, 300, 40, 10)
+    universe_n = st.slider("掃描檔數", 20, 300, 20, 10)
     topn = st.slider("排行榜 TopN", 5, 30, 10, 1)
     refresh_sec = st.slider("建議手動刷新秒數", 5, 60, 10, 5)
     st.caption("真實模式建議每 10~20 秒重新整理一次，避免資料源壓力。")
 
 symbol_map = {**{s: s for s in CORE_SYMBOLS}, **LOCAL_SYMBOL_NAME_MAP}
 try:
-    remote_symbol_map = get_symbol_name_map(limit=max(300, universe_n * 3), cache_buster=APP_VERSION)
+    remote_symbol_map = get_symbol_name_map(limit=max(120, universe_n * 2), cache_buster=APP_VERSION)
     if remote_symbol_map:
         symbol_map.update(remote_symbol_map)
 except Exception:
