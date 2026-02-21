@@ -18,7 +18,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r5"
+APP_VERSION = "2026-02-21r6"
 
 
 # ----------------------------
@@ -349,9 +349,8 @@ def get_tw_symbols(limit: int = 200) -> List[str]:
     if not items:
         items = LOCAL_SYMBOL_POOL.copy()
 
-    # 若 API 只回了少量資料，補齊本地股票池以提升穩定性
-    if len(items) < 60:
-        items.extend(LOCAL_SYMBOL_POOL)
+    # 無論外部 API 是否正常，永遠補上本地股票池，確保清單/單檔查詢可用
+    items.extend(LOCAL_SYMBOL_POOL)
 
     symbols = sorted(set(items))
     if not symbols:
