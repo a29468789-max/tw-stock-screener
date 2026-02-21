@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r61"
+APP_VERSION = "2026-02-21r62"
 
 
 # ----------------------------
@@ -344,7 +344,7 @@ def fetch_json_with_retries(url: str, headers: Dict[str, str], retries: int = 2,
 
 
 @st.cache_data(ttl=300)
-def get_tw_symbols(limit: int = 200) -> List[str]:
+def get_tw_symbols(limit: int = 200, cache_buster: str = APP_VERSION) -> List[str]:
     # 保底至少能支撐 sidebar 預設掃描檔數，避免回傳空清單
     limit = max(int(limit or 0), 20)
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -404,11 +404,11 @@ def get_tw_symbols(limit: int = 200) -> List[str]:
 
 
 @st.cache_data(ttl=600)
-def get_symbol_name_map(limit: int = 800) -> Dict[str, str]:
+def get_symbol_name_map(limit: int = 800, cache_buster: str = APP_VERSION) -> Dict[str, str]:
     # 名稱對照以穩定性優先：限制抓取上限，避免低資源環境下冷啟動過慢
     cap = max(200, min(int(limit or 800), 800))
     out: Dict[str, str] = {}
-    symbols = safe_get_tw_symbols(limit=cap)
+    symbols = safe_get_tw_symbols(limit=cap, cache_buster=cache_buster)
 
     # 先寫入完整本地池，避免外部來源故障時名稱對照退化
     for s in get_base_pool():
@@ -457,10 +457,10 @@ def resolve_symbol(query: str, symbol_map: Dict[str, str]) -> Optional[str]:
     return None
 
 
-def safe_get_tw_symbols(limit: int) -> List[str]:
+def safe_get_tw_symbols(limit: int, cache_buster: str = APP_VERSION) -> List[str]:
     target_n = max(20, int(limit or 20))
     try:
-        symbols = get_tw_symbols(limit=target_n)
+        symbols = get_tw_symbols(limit=target_n, cache_buster=cache_buster)
     except Exception:
         symbols = []
 
@@ -674,7 +674,7 @@ with st.sidebar:
 
 symbol_map = {**{s: s for s in CORE_SYMBOLS}, **LOCAL_SYMBOL_NAME_MAP}
 try:
-    remote_symbol_map = get_symbol_name_map(limit=max(300, universe_n * 3))
+    remote_symbol_map = get_symbol_name_map(limit=max(300, universe_n * 3), cache_buster=APP_VERSION)
     if remote_symbol_map:
         symbol_map.update(remote_symbol_map)
 except Exception:
