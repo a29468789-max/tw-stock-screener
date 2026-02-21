@@ -18,7 +18,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r15"
+APP_VERSION = "2026-02-21r16"
 
 
 # ----------------------------
@@ -618,6 +618,8 @@ else:
     # 雙重保底：不論外部來源狀態都維持可掃描清單，避免 UI 出現股票池不可用
     api_symbols = list(symbols)
     symbols = ensure_symbol_pool(symbols, min_size=max(20, universe_n))[: max(20, universe_n)]
+    if not symbols:
+        symbols = LOCAL_SYMBOL_POOL[: max(20, min(universe_n, len(LOCAL_SYMBOL_POOL)))]
     if not api_symbols:
         st.info("即時來源暫時不可用，已自動切換內建股票池繼續掃描。")
 
@@ -690,7 +692,7 @@ else:
         market = pd.DataFrame(rows)
     elif symbols:
         st.warning("目前抓不到可用即時資料，已改用本地股票池與歷史備援資料持續服務。")
-        fallback_symbols = CORE_SYMBOLS[: max(20, min(universe_n, len(CORE_SYMBOLS)))]
+        fallback_symbols = LOCAL_SYMBOL_POOL[: max(20, min(universe_n, len(LOCAL_SYMBOL_POOL)))]
         fallback_rows = []
         for sym in fallback_symbols:
             daily = add_indicators(generate_local_history(sym))
@@ -719,7 +721,7 @@ else:
 if market is None or market.empty:
     st.warning("即時來源異常，已切換本地股票池保底模式。")
     emergency_rows = []
-    for sym in CORE_SYMBOLS[: max(20, min(universe_n, len(CORE_SYMBOLS)))]:
+    for sym in LOCAL_SYMBOL_POOL[: max(20, min(universe_n, len(LOCAL_SYMBOL_POOL)))]: 
         daily = add_indicators(generate_local_history(sym))
         result = score_symbol(daily, market_aligned=True)
         reasons = "、".join(result["reasons"]) if result["reasons"] else "-"
