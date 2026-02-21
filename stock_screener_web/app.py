@@ -18,7 +18,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r"
+APP_VERSION = "2026-02-21r2"
 
 
 # ----------------------------
@@ -592,10 +592,12 @@ if mode == "Mock示範":
     market = generate_mock_snapshot(n=universe_n, seed=42)
 else:
     symbols = get_tw_symbols(limit=universe_n)
+    # 強化保底：任何情況都確保有可掃描清單（避免 UI 出現股票池不可用警示）
     if not symbols:
-        # 進一步保底：即使股票池服務全掛，也維持真實模式下的可掃描能力
-        symbols = CORE_SYMBOLS[:universe_n]
+        symbols = LOCAL_SYMBOL_POOL[: max(20, universe_n)]
         st.info("即時股票池服務暫時不可用，已改用內建股票池繼續掃描。")
+    elif len(symbols) < 20:
+        symbols = list(dict.fromkeys(symbols + LOCAL_SYMBOL_POOL))[: max(20, universe_n)]
 
     rows = []
     fallback_history_count = 0
