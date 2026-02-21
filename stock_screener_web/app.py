@@ -18,7 +18,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r16"
+APP_VERSION = "2026-02-21r17"
 
 
 # ----------------------------
@@ -310,10 +310,12 @@ def ensure_symbol_pool(symbols: List[str], min_size: int = 20) -> List[str]:
 def get_tw_symbols(limit: int = 200) -> List[str]:
     # 保底至少能支撐 sidebar 預設掃描檔數，避免回傳空清單
     limit = max(int(limit or 0), 20)
-    items = []
     headers = {"User-Agent": "Mozilla/5.0"}
 
-    # 優先用 twstock；若不可用，fallback 到公開 API
+    # 先放入本地股票池，確保外部來源全部失敗時仍可掃描/單檔查詢
+    items = LOCAL_SYMBOL_POOL.copy()
+
+    # 優先用 twstock；若不可用，再補公開 API（best-effort）
     if twstock is not None:
         try:
             for code, info in twstock.codes.items():
@@ -326,40 +328,32 @@ def get_tw_symbols(limit: int = 200) -> List[str]:
             pass
 
     # fallback 1: 上市
-    if not items:
-        try:
-            res = requests.get("https://openapi.twse.com.tw/v1/opendata/t187ap03_L", timeout=15, headers=headers)
-            data = res.json() if res.ok else []
-            for row in data:
-                for v in row.values():
-                    if isinstance(v, str) and v.isdigit() and len(v) == 4:
-                        items.append(v)
-                        break
-        except Exception:
-            pass
+    try:
+        res = requests.get("https://openapi.twse.com.tw/v1/opendata/t187ap03_L", timeout=8, headers=headers)
+        data = res.json() if res.ok else []
+        for row in data:
+            for v in row.values():
+                if isinstance(v, str) and v.isdigit() and len(v) == 4:
+                    items.append(v)
+                    break
+    except Exception:
+        pass
 
     # fallback 2: 上櫃
-    if not items:
-        try:
-            res = requests.get("https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes", timeout=15, headers=headers)
-            data = res.json() if res.ok else []
-            for row in data:
-                for key in ("SecuritiesCompanyCode", "Code", "股票代號"):
-                    v = row.get(key)
-                    if isinstance(v, str) and v.isdigit() and len(v) == 4:
-                        items.append(v)
-                        break
-        except Exception:
-            pass
+    try:
+        res = requests.get("https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes", timeout=8, headers=headers)
+        data = res.json() if res.ok else []
+        for row in data:
+            for key in ("SecuritiesCompanyCode", "Code", "股票代號"):
+                v = row.get(key)
+                if isinstance(v, str) and v.isdigit() and len(v) == 4:
+                    items.append(v)
+                    break
+    except Exception:
+        pass
 
-    # 最後保底：避免雲端暫時性連線問題導致真實模式完全不可用
-    if not items:
-        items = LOCAL_SYMBOL_POOL.copy()
-
-    # 無論外部 API 是否正常，永遠補上本地股票池，確保清單/單檔查詢可用
-    items.extend(LOCAL_SYMBOL_POOL)
-
-    symbols = sorted(set(items))
+    # 以首次出現順序去重，保留本地池優先可用性
+    symbols = list(dict.fromkeys(items))
     symbols = ensure_symbol_pool(symbols, min_size=20)
     symbols = symbols[:limit]
     if not symbols:
