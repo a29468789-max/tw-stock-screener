@@ -465,12 +465,12 @@ def resolve_symbol(query: str, symbol_map: Dict[str, str]) -> Optional[str]:
     if not q:
         return None
 
-    # 即使名稱對照來源失敗，也允許使用者以 4 碼代號直接查詢
-    if q.isdigit() and len(q) == 4:
+    # 允許 4~6 碼代號（含 ETF 常見 5 碼，如 00878）
+    if q.isdigit() and 4 <= len(q) <= 6:
         return q
 
-    # 容錯：支援「2330 台積電」這類混合輸入
-    m = re.search(r"(?<!\d)(\d{4})(?!\d)", q)
+    # 容錯：支援「2330 台積電」/「00878 國泰永續高股息」這類混合輸入
+    m = re.search(r"(?<!\d)(\d{4,6})(?!\d)", q)
     if m:
         return m.group(1)
 
@@ -1155,14 +1155,14 @@ else:
 
 st.divider()
 st.subheader("快速查詢個股（即使不在目前掃描清單也可查）")
-manual_q = st.text_input("輸入代碼或名稱，例如：2330 / 台積電", key="manual_symbol_query")
+manual_q = st.text_input("輸入代碼或名稱，例如：2330 / 00878 / 台積電", key="manual_symbol_query")
 if manual_q:
     resolved = resolve_symbol(manual_q, symbol_map)
-    if resolved is None and manual_q.strip().isdigit() and len(manual_q.strip()) == 4:
+    if resolved is None and manual_q.strip().isdigit() and 4 <= len(manual_q.strip()) <= 6:
         resolved = manual_q.strip()
 
     if resolved is None:
-        st.warning("找不到符合的股票代碼，請改輸入 4 碼代號或完整名稱。")
+        st.warning("找不到符合的股票代碼，請改輸入 4~6 碼代號或完整名稱。")
     else:
         daily_m = fetch_daily_history(resolved)
         if daily_m is None or len(daily_m) < 120:
