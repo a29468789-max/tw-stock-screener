@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r2140-healthcheck-autofix65"  # healthcheck auto-repair bump: force fresh deploy/cache-bust so local-pool fallback replaces stale pool-error page
+APP_VERSION = "2026-02-21r2141-healthcheck-autofix66"  # healthcheck auto-repair bump: trigger Render autoDeploy/cache-bust so stale pool-error instances are replaced by local-first fallback flow
 
 
 # ----------------------------
