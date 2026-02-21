@@ -726,12 +726,14 @@ if mode == "Mock示範":
 else:
     st.caption("即時來源若暫時不可用，系統會自動切換本地股票池與單檔備援查詢（不中斷、不顯示股票池不可用致命錯誤）。")
     st.info("健康檢查保底：若外部股票池/即時 API 失敗，仍會維持可掃描清單與單檔查詢。")
+    # Local-first：先準備本地可掃描清單，再 best-effort 疊加外部來源
+    symbols_local = pad_symbols_to_target(get_base_pool(), max(20, universe_n))
     try:
-        symbols = build_universe(universe_n)
+        symbols_remote = build_universe(universe_n)
     except Exception:
-        symbols = []
+        symbols_remote = []
     symbols = pad_symbols_to_target(
-        ensure_symbol_pool(symbols, min_size=max(20, universe_n)),
+        ensure_symbol_pool(list(dict.fromkeys(symbols_local + (symbols_remote or []))), min_size=max(20, universe_n)),
         max(20, universe_n),
     )
     # 額外硬保底：若發生任何非預期狀態導致清單為空，立刻回填本地池
