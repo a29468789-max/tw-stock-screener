@@ -18,7 +18,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21n"
+APP_VERSION = "2026-02-21o"
 
 
 # ----------------------------
@@ -299,6 +299,8 @@ LOCAL_SYMBOL_NAME_MAP: Dict[str, str] = {
 
 @st.cache_data(ttl=3600)
 def get_tw_symbols(limit: int = 200) -> List[str]:
+    # 保底至少能支撐 sidebar 預設掃描檔數，避免回傳空清單
+    limit = max(int(limit or 0), 20)
     items = []
     headers = {"User-Agent": "Mozilla/5.0"}
 
@@ -346,8 +348,13 @@ def get_tw_symbols(limit: int = 200) -> List[str]:
         items = CORE_SYMBOLS.copy()
 
     # 若 API 只回了少量資料，補齊核心清單以提升穩定性
-    items.extend(CORE_SYMBOLS)
-    return sorted(set(items))[:limit]
+    if len(items) < 60:
+        items.extend(CORE_SYMBOLS)
+
+    symbols = sorted(set(items))
+    if not symbols:
+        symbols = CORE_SYMBOLS.copy()
+    return symbols[:limit]
 
 
 @st.cache_data(ttl=3600)
@@ -584,9 +591,9 @@ if mode == "Mock示範":
 else:
     symbols = get_tw_symbols(limit=universe_n)
     if not symbols:
-        st.warning("即時股票池暫時不可用，已自動切換 Mock 示範資料。")
-        market = generate_mock_snapshot(n=universe_n, seed=42)
-        symbols = []
+        # 進一步保底：即使股票池服務全掛，也維持真實模式下的可掃描能力
+        symbols = CORE_SYMBOLS[:universe_n]
+        st.info("即時股票池服務暫時不可用，已改用內建股票池繼續掃描。")
 
     rows = []
     progress = st.progress(0, text="載入即時資料中...") if symbols else None
