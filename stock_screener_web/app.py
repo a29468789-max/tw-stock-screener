@@ -19,7 +19,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r57"
+APP_VERSION = "2026-02-21r58"
 
 
 # ----------------------------
@@ -396,9 +396,11 @@ def get_tw_symbols(limit: int = 200) -> List[str]:
 
 
 @st.cache_data(ttl=600)
-def get_symbol_name_map(limit: int = 4000) -> Dict[str, str]:
+def get_symbol_name_map(limit: int = 800) -> Dict[str, str]:
+    # 名稱對照以穩定性優先：限制抓取上限，避免低資源環境下冷啟動過慢
+    cap = max(200, min(int(limit or 800), 800))
     out: Dict[str, str] = {}
-    symbols = safe_get_tw_symbols(limit=limit)
+    symbols = safe_get_tw_symbols(limit=cap)
 
     # 先寫入完整本地池，避免外部來源故障時名稱對照退化
     for s in get_base_pool():
@@ -664,7 +666,7 @@ with st.sidebar:
 
 symbol_map = {**{s: s for s in CORE_SYMBOLS}, **LOCAL_SYMBOL_NAME_MAP}
 try:
-    remote_symbol_map = get_symbol_name_map(limit=max(2000, universe_n * 5))
+    remote_symbol_map = get_symbol_name_map(limit=max(300, universe_n * 3))
     if remote_symbol_map:
         symbol_map.update(remote_symbol_map)
 except Exception:
