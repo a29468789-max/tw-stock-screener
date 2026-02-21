@@ -1,6 +1,7 @@
 import datetime as dt
 import math
 import re
+import time
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -19,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r59"
+APP_VERSION = "2026-02-21r60"
 
 
 # ----------------------------
@@ -325,13 +326,20 @@ def ensure_symbol_pool(symbols: List[str], min_size: int = 20) -> List[str]:
 
 
 def fetch_json_with_retries(url: str, headers: Dict[str, str], retries: int = 2, timeout: int = 8):
-    for _ in range(max(1, retries)):
+    # 健康檢查 hardening：避免短暫網路抖動/上游回傳非 JSON 導致整批來源失效
+    attempts = max(1, retries)
+    for i in range(attempts):
         try:
             res = requests.get(url, timeout=timeout, headers=headers)
-            if res.ok:
-                return res.json()
+            if not res.ok:
+                raise RuntimeError(f"http {res.status_code}")
+            data = res.json()
+            if isinstance(data, list):
+                return data
         except Exception:
-            pass
+            # 小幅退避，避免瞬間連線失敗時全部 miss
+            if i < attempts - 1:
+                time.sleep(0.25 * (i + 1))
     return []
 
 
