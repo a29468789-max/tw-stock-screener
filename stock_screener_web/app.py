@@ -18,7 +18,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r3"
+APP_VERSION = "2026-02-21r4"
 
 
 # ----------------------------
@@ -683,6 +683,31 @@ else:
                 }
             )
         market = pd.DataFrame(fallback_rows)
+
+# 最終保底：任何非預期狀況都保證有可查詢清單與單檔分析
+if market is None or market.empty:
+    st.warning("即時來源異常，已切換本地股票池保底模式。")
+    emergency_rows = []
+    for sym in CORE_SYMBOLS[: max(20, min(universe_n, len(CORE_SYMBOLS)))]:
+        daily = add_indicators(generate_local_history(sym))
+        result = score_symbol(daily, market_aligned=True)
+        reasons = "、".join(result["reasons"]) if result["reasons"] else "-"
+        emergency_rows.append(
+            {
+                "代碼": sym,
+                "名稱": symbol_map.get(sym, sym),
+                "狀態": result["state"],
+                "TrendScore": result["trend_score"],
+                "Confidence": result["confidence"],
+                "ReversalRisk": result["reversal_risk"],
+                "建議": result["action"],
+                "策略摘要": reasons,
+                "順逆勢": "順勢" if "逆勢於大盤" not in reasons else "逆勢",
+                "風險": "低" if result["reversal_risk"] < 0.25 else "中" if result["reversal_risk"] < 0.5 else "高",
+                "_detail": result,
+            }
+        )
+    market = pd.DataFrame(emergency_rows)
 
 c1, c2, c3 = st.columns(3)
 with c1:
