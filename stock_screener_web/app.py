@@ -19,7 +19,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r50"
+APP_VERSION = "2026-02-21r51"
 
 
 # ----------------------------
@@ -386,9 +386,11 @@ def get_tw_symbols(limit: int = 200) -> List[str]:
     # 以首次出現順序去重，保留本地池優先可用性
     symbols = list(dict.fromkeys(items))
     symbols = ensure_symbol_pool(symbols, min_size=20)
+    if len(symbols) < 20:
+        symbols = list(dict.fromkeys(symbols + get_base_pool() + EMERGENCY_SYMBOL_POOL))
     symbols = symbols[:limit]
     if not symbols:
-        base_pool = get_base_pool()
+        base_pool = list(dict.fromkeys(get_base_pool() + EMERGENCY_SYMBOL_POOL))
         symbols = base_pool[: max(20, min(limit, len(base_pool)))]
     return symbols
 
