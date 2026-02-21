@@ -283,6 +283,7 @@ CORE_SYMBOLS = [
 @st.cache_data(ttl=3600)
 def get_tw_symbols(limit: int = 200) -> List[str]:
     items = []
+    headers = {"User-Agent": "Mozilla/5.0"}
 
     # 優先用 twstock；若不可用，fallback 到公開 API
     if twstock is not None:
@@ -299,7 +300,7 @@ def get_tw_symbols(limit: int = 200) -> List[str]:
     # fallback 1: 上市
     if not items:
         try:
-            res = requests.get("https://openapi.twse.com.tw/v1/opendata/t187ap03_L", timeout=15)
+            res = requests.get("https://openapi.twse.com.tw/v1/opendata/t187ap03_L", timeout=15, headers=headers)
             data = res.json() if res.ok else []
             for row in data:
                 for v in row.values():
@@ -312,7 +313,7 @@ def get_tw_symbols(limit: int = 200) -> List[str]:
     # fallback 2: 上櫃
     if not items:
         try:
-            res = requests.get("https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes", timeout=15)
+            res = requests.get("https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes", timeout=15, headers=headers)
             data = res.json() if res.ok else []
             for row in data:
                 for key in ("SecuritiesCompanyCode", "Code", "股票代號"):
@@ -330,6 +331,45 @@ def get_tw_symbols(limit: int = 200) -> List[str]:
     # 若 API 只回了少量資料，補齊核心清單以提升穩定性
     items.extend(CORE_SYMBOLS)
     return sorted(set(items))[:limit]
+
+
+@st.cache_data(ttl=3600)
+def get_symbol_name_map(limit: int = 4000) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    symbols = get_tw_symbols(limit=limit)
+
+    for s in symbols:
+        out[s] = s
+
+    if twstock is not None:
+        try:
+            for code, info in twstock.codes.items():
+                if not code.isdigit() or len(code) != 4:
+                    continue
+                if getattr(info, "type", "") != "股票":
+                    continue
+                out[code] = getattr(info, "name", code) or code
+        except Exception:
+            pass
+
+    return out
+
+
+def resolve_symbol(query: str, symbol_map: Dict[str, str]) -> Optional[str]:
+    q = (query or "").strip()
+    if not q:
+        return None
+
+    if q.isdigit() and len(q) == 4 and q in symbol_map:
+        return q
+
+    q_lower = q.lower()
+    for code, name in symbol_map.items():
+        if q == code or q == f"{code} {name}":
+            return code
+        if q_lower in str(name).lower():
+            return code
+    return None
 
 
 @st.cache_data(ttl=1800)
@@ -492,6 +532,8 @@ with st.sidebar:
     refresh_sec = st.slider("建議手動刷新秒數", 5, 60, 10, 5)
     st.caption("真實模式建議每 10~20 秒重新整理一次，避免資料源壓力。")
 
+symbol_map = get_symbol_name_map(limit=max(2000, universe_n * 5))
+
 if mode == "Mock示範":
     market = generate_mock_snapshot(n=universe_n, seed=42)
 else:
@@ -532,10 +574,7 @@ else:
         regime = "順勢" if "逆勢於大盤" not in reasons else "逆勢"
         risk = "低" if result["reversal_risk"] < 0.25 else "中" if result["reversal_risk"] < 0.5 else "高"
 
-        if twstock is not None and twstock.codes.get(sym):
-            name = twstock.codes.get(sym).name
-        else:
-            name = sym
+        name = symbol_map.get(sym, sym)
 
         rows.append(
             {
@@ -580,7 +619,13 @@ with c3:
 
 st.divider()
 st.subheader("單檔決策報告")
-selected = st.selectbox("選擇股票", market["代碼"].tolist(), index=0)
+option_items = []
+for code in market["代碼"].tolist():
+    name = symbol_map.get(code, str(market.loc[market["代碼"] == code, "名稱"].iloc[0]))
+    option_items.append(f"{code} {name}")
+
+selected_label = st.selectbox("選擇股票（可直接打字搜尋代碼/名稱）", option_items, index=0)
+selected = selected_label.split(" ")[0]
 row = market[market["代碼"] == selected].iloc[0]
 
 if "_detail" in row and isinstance(row["_detail"], dict):
@@ -617,11 +662,45 @@ for i, r in enumerate(detail.get("reasons", [])[:5], start=1):
 
 st.divider()
 st.subheader("全市場查詢")
-kw = st.text_input("輸入代碼或名稱")
+kw = st.text_input("輸入代碼或名稱（支援打字搜尋）")
 if kw:
-    q = market[market["代碼"].str.contains(kw) | market["名稱"].str.contains(kw, na=False)]
+    q = market[
+        market["代碼"].astype(str).str.contains(kw, regex=False, na=False)
+        | market["名稱"].astype(str).str.contains(kw, regex=False, na=False)
+    ]
     st.dataframe(q.drop(columns=["_detail"], errors="ignore"), use_container_width=True, hide_index=True)
 else:
     st.dataframe(market.drop(columns=["_detail"], errors="ignore"), use_container_width=True, hide_index=True)
+
+st.divider()
+st.subheader("快速查詢個股（即使不在目前掃描清單也可查）")
+manual_q = st.text_input("輸入代碼或名稱，例如：2330 / 台積電", key="manual_symbol_query")
+if manual_q:
+    resolved = resolve_symbol(manual_q, symbol_map)
+    if resolved is None and manual_q.strip().isdigit() and len(manual_q.strip()) == 4:
+        resolved = manual_q.strip()
+
+    if resolved is None:
+        st.warning("找不到符合的股票代碼，請改輸入 4 碼代號或完整名稱。")
+    else:
+        daily_m = fetch_daily_history(resolved)
+        if daily_m is None or len(daily_m) < 120:
+            st.error(f"{resolved} 目前抓不到足夠歷史資料。")
+        else:
+            rt_m = fetch_realtime(resolved)
+            if rt_m is None:
+                b = daily_m.iloc[-1]
+                rt_m = {
+                    "last": float(b["close"]),
+                    "open": float(b["open"]),
+                    "high": float(b["high"]),
+                    "low": float(b["low"]),
+                    "volume": float(b["volume"]),
+                }
+            df_m = add_indicators(upsert_today_bar(daily_m, rt_m))
+            d_m = score_symbol(df_m, market_aligned=True)
+            st.info(f"{resolved} {symbol_map.get(resolved, resolved)} | 狀態：{d_m['state']} | 建議：{d_m['action']}")
+            st.write(f"進場參考：{d_m.get('entry', 'N/A')}")
+            st.write(f"停損：{d_m.get('stop_loss', 'N/A')} | 停利：{d_m.get('take_profit', 'N/A')}")
 
 st.caption(f"已載入 {len(market)} 檔。建議每 {refresh_sec} 秒手動刷新，獲得盤中最新狀態。")
