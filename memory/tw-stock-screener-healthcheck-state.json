@@ -1,7 +1,7 @@
 {
-  "staleDeployCount": 0,
-  "status": "healthy",
-  "build": "2026-02-22-yahoo-direct-v1",
-  "lastRun": "2026-02-22T05:51:00+08:00",
-  "reason": "web_fetch homepage + /_stcore/health OK; browser snapshot confirms non-blank interactive app (資料模式單選、掃描檔數/TopN/刷新秒數滑桿) and no \"無法取得台股股票池\""
+  "staleDeployCount": 3,
+  "status": "unhealthy",
+  "build": "unknown-from-ui",
+  "lastRun": "2026-02-22T06:46:00+08:00",
+  "reason": "/_stcore/health=ok but homepage/browser still blank Streamlit skeleton with websocket stream close-before-establish; likely deployment/platform sync lag after fix commit 232b091"
 }

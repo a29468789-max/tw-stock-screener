@@ -1,9 +1,10 @@
 {
   "service": "https://tw-stock-screener.onrender.com",
-  "lastCheckAt": "2026-02-22T06:36:00+08:00",
-  "lastHealth": "healthy",
-  "lastReason": "UI content present with interactive controls; no stock-pool error text; /_stcore/health=ok",
-  "lastBuildText": "build 2026-02-22-yahoo-direct-v1",
-  "pendingDeployStaleRounds": 0,
-  "lastFixCommit": null
+  "lastCheckAt": "2026-02-22T06:46:00+08:00",
+  "lastHealth": "unhealthy",
+  "lastReason": "Homepage still renders blank Streamlit skeleton (non-interactive) and browser console repeatedly shows wss /_stcore/stream closed before establish while /_stcore/health is ok; likely deployment/platform sync lag.",
+  "lastBuildText": "unknown-from-ui",
+  "pendingDeployStaleRounds": 3,
+  "lastFixCommit": "232b091",
+  "lastFixSummary": "Hardened Streamlit Render startup for stable browser sessions."
 }
