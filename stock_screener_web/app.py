@@ -18,7 +18,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r8"
+APP_VERSION = "2026-02-21r9"
 
 
 # ----------------------------
@@ -361,7 +361,10 @@ def get_tw_symbols(limit: int = 200) -> List[str]:
 
     symbols = sorted(set(items))
     symbols = ensure_symbol_pool(symbols, min_size=20)
-    return symbols[:limit]
+    symbols = symbols[:limit]
+    if not symbols:
+        symbols = LOCAL_SYMBOL_POOL[: max(20, min(limit, len(LOCAL_SYMBOL_POOL)))]
+    return symbols
 
 
 @st.cache_data(ttl=3600)
