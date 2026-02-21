@@ -700,8 +700,8 @@ st.caption(f"build {APP_VERSION}")
 
 with st.sidebar:
     st.header("資料模式")
-    # 預設以真實模式啟動，健康檢查可直接驗證外部來源與保底機制
-    mode = st.radio("選擇", ["真實台股即時", "Mock示範"], index=0)
+    # 預設改為穩定模式，避免外部來源波動造成整體不可用
+    mode = st.radio("選擇", ["穩定查詢（不依賴外部）", "真實台股即時", "Mock示範"], index=0)
     universe_n = st.slider("掃描檔數", 20, 300, 40, 10)
     topn = st.slider("排行榜 TopN", 5, 30, 10, 1)
     refresh_sec = st.slider("建議手動刷新秒數", 5, 60, 10, 5)
@@ -723,6 +723,32 @@ if not symbol_map:
 market = pd.DataFrame()
 if mode == "Mock示範":
     market = generate_mock_snapshot(n=universe_n, seed=42)
+elif mode == "穩定查詢（不依賴外部）":
+    st.caption("穩定模式：完全使用本地股票池與本地歷史資料，不依賴外部 API。")
+    symbols = pad_symbols_to_target(get_base_pool(), universe_n)
+    rows = []
+    for sym in symbols:
+        daily = add_indicators(generate_local_history(sym))
+        result = score_symbol(daily, market_aligned=True)
+        reasons = "、".join(result["reasons"]) if result["reasons"] else "-"
+        regime = "順勢" if "逆勢於大盤" not in reasons else "逆勢"
+        risk = "低" if result["reversal_risk"] < 0.25 else "中" if result["reversal_risk"] < 0.5 else "高"
+        rows.append(
+            {
+                "代碼": sym,
+                "名稱": symbol_map.get(sym, sym),
+                "狀態": result["state"],
+                "TrendScore": result["trend_score"],
+                "Confidence": result["confidence"],
+                "ReversalRisk": result["reversal_risk"],
+                "建議": result["action"],
+                "策略摘要": reasons,
+                "順逆勢": regime,
+                "風險": risk,
+                "_detail": result,
+            }
+        )
+    market = pd.DataFrame(rows)
 else:
     st.caption("即時來源若暫時不可用，系統會自動切換本地股票池與單檔備援查詢（不中斷、不顯示股票池不可用致命錯誤）。")
     st.info("健康檢查保底：若外部股票池/即時 API 失敗，仍會維持可掃描清單與單檔查詢。")
