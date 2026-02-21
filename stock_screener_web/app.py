@@ -19,7 +19,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r26"
+APP_VERSION = "2026-02-21r27"
 
 
 # ----------------------------
@@ -303,7 +303,11 @@ EMERGENCY_SYMBOL_POOL: List[str] = ["2330", "2317", "2454", "2303", "2882", "260
 
 
 def get_base_pool() -> List[str]:
-    return LOCAL_SYMBOL_POOL.copy() if LOCAL_SYMBOL_POOL else EMERGENCY_SYMBOL_POOL.copy()
+    pool = LOCAL_SYMBOL_POOL.copy() if LOCAL_SYMBOL_POOL else EMERGENCY_SYMBOL_POOL.copy()
+    pool = [s for s in pool if isinstance(s, str) and s.isdigit() and len(s) == 4]
+    if not pool:
+        pool = EMERGENCY_SYMBOL_POOL.copy()
+    return list(dict.fromkeys(pool))
 
 
 def ensure_symbol_pool(symbols: List[str], min_size: int = 20) -> List[str]:
