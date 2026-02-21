@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r1641-healthcheck"  # healthcheck auto-bump: trigger redeploy; keep local-first pool + single-stock fallback always available
+APP_VERSION = "2026-02-21r1641-healthcheck-hotfix1"  # healthcheck auto-bump: force redeploy to apply local-first pool + single-stock fallback safeguards
 
 
 # ----------------------------
