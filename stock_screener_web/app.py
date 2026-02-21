@@ -19,7 +19,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r48"
+APP_VERSION = "2026-02-21r49"
 
 
 # ----------------------------
@@ -668,6 +668,11 @@ try:
 except Exception:
     pass
 
+# 硬保底：名稱對照不可為空，避免外部來源異常時單檔查詢退化
+if not symbol_map:
+    for s in get_base_pool():
+        symbol_map[s] = LOCAL_SYMBOL_NAME_MAP.get(s, s)
+
 market = pd.DataFrame()
 if mode == "Mock示範":
     market = generate_mock_snapshot(n=universe_n, seed=42)
@@ -847,6 +852,32 @@ with c3:
 
 st.divider()
 st.subheader("單檔決策報告")
+
+# 末端保底：即使前序流程異常，仍保證有可選清單與單檔查詢
+if market is None or market.empty or "代碼" not in market.columns:
+    fallback_symbols = get_base_pool()[: max(20, min(universe_n, len(get_base_pool())))]
+    fallback_rows = []
+    for sym in fallback_symbols:
+        daily = add_indicators(generate_local_history(sym))
+        result = score_symbol(daily, market_aligned=True)
+        fallback_rows.append(
+            {
+                "代碼": sym,
+                "名稱": symbol_map.get(sym, sym),
+                "狀態": result.get("state", "盤整"),
+                "TrendScore": result.get("trend_score", 0),
+                "Confidence": result.get("confidence", 0),
+                "ReversalRisk": result.get("reversal_risk", 0),
+                "建議": result.get("action", "Watch"),
+                "策略摘要": "、".join(result.get("reasons", [])) if result.get("reasons") else "-",
+                "順逆勢": "順勢",
+                "風險": "中",
+                "_detail": result,
+            }
+        )
+    market = pd.DataFrame(fallback_rows)
+    st.info("掃描清單來源暫時異常，已切換本地股票池保底模式。")
+
 option_items = []
 for code in market["代碼"].tolist():
     name = symbol_map.get(code, str(market.loc[market["代碼"] == code, "名稱"].iloc[0]))
