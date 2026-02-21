@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r81"
+APP_VERSION = "2026-02-21r82"
 
 
 # ----------------------------
@@ -319,11 +319,29 @@ def get_base_pool() -> List[str]:
     return list(dict.fromkeys(pool))
 
 
+def pad_symbols_to_target(symbols: List[str], target_n: int) -> List[str]:
+    target_n = max(20, int(target_n or 20))
+    merged = [
+        s
+        for s in list(dict.fromkeys((symbols or []) + get_base_pool() + EMERGENCY_SYMBOL_POOL))
+        if isinstance(s, str) and s.isdigit() and len(s) == 4
+    ]
+    if len(merged) < target_n:
+        # 最終補齊：產生可解析的 4 碼代號，避免清單不足造成 UI/流程中斷
+        seed = 9000
+        while len(merged) < target_n:
+            seed += 1
+            code = f"{seed:04d}"
+            if code not in merged:
+                merged.append(code)
+    return merged[:target_n]
+
+
 def ensure_symbol_pool(symbols: List[str], min_size: int = 20) -> List[str]:
     base_pool = get_base_pool()
     merged = list(dict.fromkeys((symbols or []) + base_pool))
     if len(merged) < min_size:
-        return base_pool.copy()
+        return pad_symbols_to_target(base_pool, min_size)
     return merged
 
 
@@ -485,11 +503,8 @@ def build_universe(limit: int) -> List[str]:
         symbols = []
 
     symbols = [s for s in (symbols or []) if isinstance(s, str) and s.isdigit() and len(s) == 4]
-    if len(symbols) < target_n:
-        symbols = list(dict.fromkeys(symbols + base_pool + EMERGENCY_SYMBOL_POOL))
-    if not symbols:
-        symbols = base_pool or EMERGENCY_SYMBOL_POOL.copy()
-    return symbols[: max(20, min(target_n, len(symbols)))]
+    symbols = pad_symbols_to_target(symbols + base_pool, target_n)
+    return symbols
 
 
 @st.cache_data(ttl=1800)
@@ -701,7 +716,10 @@ else:
         symbols = build_universe(universe_n)
     except Exception:
         symbols = []
-    symbols = ensure_symbol_pool(symbols, min_size=max(20, universe_n))[: max(20, universe_n)]
+    symbols = pad_symbols_to_target(
+        ensure_symbol_pool(symbols, min_size=max(20, universe_n)),
+        max(20, universe_n),
+    )
     # 額外硬保底：若發生任何非預期狀態導致清單為空，立刻回填本地池
     if not symbols:
         symbols = get_base_pool()[: max(20, min(universe_n, len(get_base_pool())))]
