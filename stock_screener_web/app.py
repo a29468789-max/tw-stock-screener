@@ -18,7 +18,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r7"
+APP_VERSION = "2026-02-21r8"
 
 
 # ----------------------------
@@ -299,6 +299,13 @@ LOCAL_SYMBOL_NAME_MAP: Dict[str, str] = {
 LOCAL_SYMBOL_POOL: List[str] = sorted(set(CORE_SYMBOLS + list(LOCAL_SYMBOL_NAME_MAP.keys())))
 
 
+def ensure_symbol_pool(symbols: List[str], min_size: int = 20) -> List[str]:
+    merged = list(dict.fromkeys((symbols or []) + LOCAL_SYMBOL_POOL))
+    if len(merged) < min_size:
+        return LOCAL_SYMBOL_POOL.copy()
+    return merged
+
+
 @st.cache_data(ttl=3600)
 def get_tw_symbols(limit: int = 200) -> List[str]:
     # 保底至少能支撐 sidebar 預設掃描檔數，避免回傳空清單
@@ -353,8 +360,7 @@ def get_tw_symbols(limit: int = 200) -> List[str]:
     items.extend(LOCAL_SYMBOL_POOL)
 
     symbols = sorted(set(items))
-    if not symbols:
-        symbols = LOCAL_SYMBOL_POOL.copy()
+    symbols = ensure_symbol_pool(symbols, min_size=20)
     return symbols[:limit]
 
 
@@ -602,7 +608,7 @@ else:
         symbols = []
     # 雙重保底：不論外部來源狀態都維持可掃描清單，避免 UI 出現股票池不可用
     api_symbols = list(symbols)
-    symbols = list(dict.fromkeys((symbols or []) + LOCAL_SYMBOL_POOL))[: max(20, universe_n)]
+    symbols = ensure_symbol_pool(symbols, min_size=max(20, universe_n))[: max(20, universe_n)]
     if not api_symbols:
         st.info("即時來源暫時不可用，已自動切換內建股票池繼續掃描。")
 
