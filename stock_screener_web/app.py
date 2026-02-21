@@ -19,7 +19,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r44"
+APP_VERSION = "2026-02-21r45"
 
 
 # ----------------------------
