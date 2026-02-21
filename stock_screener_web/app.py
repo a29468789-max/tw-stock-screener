@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r95"
+APP_VERSION = "2026-02-21r96"
 
 
 # ----------------------------
@@ -371,9 +371,11 @@ def get_tw_symbols(limit: int = 200, cache_buster: str = APP_VERSION) -> List[st
 
     # 先放入本地股票池，確保外部來源全部失敗時仍可掃描/單檔查詢
     items = [s for s in get_base_pool() if isinstance(s, str) and s.isdigit() and len(s) == 4]
-    # 若本地池已足夠，直接回傳，避免冷啟動時依賴外部 API 造成「股票池不可用」
-    if len(items) >= limit:
-        return items[:limit]
+
+    # 健康檢查優先穩定性：預設直接使用本地股票池補齊，
+    # 不把外部 API 當成啟動必要條件，避免出現「股票池不可用」致命狀態。
+    if items:
+        return pad_symbols_to_target(items, limit)
 
     # 優先用 twstock；若不可用，再補公開 API（best-effort）
     if twstock is not None:
