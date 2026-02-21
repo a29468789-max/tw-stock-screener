@@ -20,7 +20,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r1807-healthcheck-hotfix39"  # healthcheck auto-repair bump: force redeploy of local-first pool + single-symbol fallback hardening
+APP_VERSION = "2026-02-21r1810-healthcheck-hotfix40"  # healthcheck auto-repair bump: enforce non-fatal pool fallback messaging + redeploy
 
 
 # ----------------------------
@@ -728,6 +728,8 @@ else:
     st.info("健康檢查保底：若外部股票池/即時 API 失敗，仍會維持可掃描清單與單檔查詢。")
     # Local-first：先以本地池直接建立可掃描 universe（外部來源僅補強，不作為啟動前提）
     symbols_local = pad_symbols_to_target(get_base_pool(), max(20, universe_n))
+    if not symbols_local:
+        symbols_local = pad_symbols_to_target(EMERGENCY_SYMBOL_POOL, max(20, universe_n))
     symbols_remote: List[str] = []
     try:
         # 僅在本地池不足時才嘗試外部補齊，避免上游短暫故障影響主流程
