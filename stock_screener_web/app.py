@@ -18,7 +18,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21q"
+APP_VERSION = "2026-02-21r"
 
 
 # ----------------------------
@@ -296,6 +296,8 @@ LOCAL_SYMBOL_NAME_MAP: Dict[str, str] = {
     "9904": "寶成", "9910": "豐泰", "9933": "中鼎",
 }
 
+LOCAL_SYMBOL_POOL: List[str] = sorted(set(CORE_SYMBOLS + list(LOCAL_SYMBOL_NAME_MAP.keys())))
+
 
 @st.cache_data(ttl=3600)
 def get_tw_symbols(limit: int = 200) -> List[str]:
@@ -345,15 +347,15 @@ def get_tw_symbols(limit: int = 200) -> List[str]:
 
     # 最後保底：避免雲端暫時性連線問題導致真實模式完全不可用
     if not items:
-        items = CORE_SYMBOLS.copy()
+        items = LOCAL_SYMBOL_POOL.copy()
 
-    # 若 API 只回了少量資料，補齊核心清單以提升穩定性
+    # 若 API 只回了少量資料，補齊本地股票池以提升穩定性
     if len(items) < 60:
-        items.extend(CORE_SYMBOLS)
+        items.extend(LOCAL_SYMBOL_POOL)
 
     symbols = sorted(set(items))
     if not symbols:
-        symbols = CORE_SYMBOLS.copy()
+        symbols = LOCAL_SYMBOL_POOL.copy()
     return symbols[:limit]
 
 
