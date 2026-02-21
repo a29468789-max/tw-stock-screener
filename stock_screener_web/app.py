@@ -19,7 +19,7 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-21r40"
+APP_VERSION = "2026-02-21r41"
 
 
 # ----------------------------
@@ -384,6 +384,10 @@ def get_tw_symbols(limit: int = 200) -> List[str]:
 def get_symbol_name_map(limit: int = 4000) -> Dict[str, str]:
     out: Dict[str, str] = {}
     symbols = safe_get_tw_symbols(limit=limit)
+
+    # 先寫入完整本地池，避免外部來源故障時名稱對照退化
+    for s in get_base_pool():
+        out[s] = LOCAL_SYMBOL_NAME_MAP.get(s, s)
 
     for s in symbols:
         out[s] = LOCAL_SYMBOL_NAME_MAP.get(s, s)
