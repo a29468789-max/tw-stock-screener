@@ -888,6 +888,9 @@ else:
 
     rows = []
     fallback_history_count = 0
+    # 即時來源失敗（或超過首屏預算）時，會用日K最後一筆估算；需註明資料日期
+    fallback_rt_count = 0
+    fallback_rt_dates = set()
     symbol_error_count = 0
     startup_budget_hit = False
     scan_started_at = time.time()
@@ -913,13 +916,21 @@ else:
             # 即時源偶發失敗時，改用最新日K收盤近似，避免整體清單為空
             if rt is None:
                 last = daily.iloc[-1]
+                try:
+                    d = pd.to_datetime(last.get("date", pd.NaT)).date().isoformat()
+                except Exception:
+                    d = "unknown"
+                fallback_rt_count += 1
+                if d and d != "unknown":
+                    fallback_rt_dates.add(d)
                 rt = {
                     "last": float(last["close"]),
                     "open": float(last["open"]),
                     "high": float(last["high"]),
                     "low": float(last["low"]),
                     "volume": float(last["volume"]),
-                    "time": "fallback-daily",
+                    # 明確註明：此為日K備援資料（非即時），並附資料日期
+                    "time": f"fallback-daily:{d}",
                 }
 
             daily2 = upsert_today_bar(daily, rt)
@@ -959,6 +970,15 @@ else:
 
     if fallback_history_count > 0:
         st.info(f"有 {fallback_history_count} 檔即時歷史來源不可用，已改用本地備援資料持續計算。")
+    if fallback_rt_count > 0:
+        dates = sorted(list(fallback_rt_dates))
+        if len(dates) == 0:
+            dates_text = "unknown"
+        elif len(dates) <= 3:
+            dates_text = ", ".join(dates)
+        else:
+            dates_text = f"{dates[0]} ~ {dates[-1]}"
+        st.info(f"有 {fallback_rt_count} 檔即時報價不可用，已改用日K備援估算（資料日期：{dates_text}）。")
     if symbol_error_count > 0:
         st.info(f"有 {symbol_error_count} 檔即時處理失敗，已自動以本地備援資料補齊。")
     if startup_budget_hit:
@@ -1180,7 +1200,11 @@ if manual_q:
             daily_m = fetch_daily_history(resolved)
             if daily_m is None or len(daily_m) < 120:
                 daily_m = generate_local_history(resolved)
-                st.info(f"{resolved} 歷史來源暫時不可用，已改用本地備援資料。")
+                try:
+                    d_m = pd.to_datetime(daily_m.iloc[-1].get("date", pd.NaT)).date().isoformat()
+                except Exception:
+                    d_m = "unknown"
+                st.info(f"{resolved} 歷史來源暫時不可用，已改用本地備援資料（資料日期：{d_m}）。")
 
             rt_m = fetch_realtime(resolved)
             if rt_m is None:
@@ -1193,8 +1217,12 @@ if manual_q:
                     "volume": float(b["volume"]),
                 }
         else:
-            st.info("離線保底：未連外抓即時資料，以下以本地備援資料估算。")
             daily_m = generate_local_history(resolved)
+            try:
+                d_m = pd.to_datetime(daily_m.iloc[-1].get("date", pd.NaT)).date().isoformat()
+            except Exception:
+                d_m = "unknown"
+            st.info(f"離線保底：未連外抓即時資料，以下以本地備援資料估算（資料日期：{d_m}）。")
             b = daily_m.iloc[-1]
             rt_m = {
                 "last": float(b["close"]),
