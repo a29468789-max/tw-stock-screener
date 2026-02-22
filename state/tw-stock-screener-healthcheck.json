@@ -1,0 +1,6 @@
+{
+  "lastCheckedAt": "2026-02-22T04:20:00Z",
+  "status": "healthy",
+  "build": "2026-02-22-yahoo-direct-v1",
+  "notes": "homepage + /_stcore/health ok; browser snapshot shows interactive controls and no stock-pool error"
+}
