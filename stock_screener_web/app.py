@@ -1,5 +1,6 @@
 import datetime as dt
 import math
+import os
 import re
 import time
 from typing import Dict, List, Optional
@@ -20,8 +21,31 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-22-render-cli-ws-flags-v13"
+# build 版本：優先使用 Render 提供的 commit（若可用），避免手動字串長期不更新
+APP_VERSION = (
+    (os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("GIT_COMMIT") or "dev")
+    .strip()
+)
+APP_VERSION = APP_VERSION[:12] if APP_VERSION and APP_VERSION != "dev" else "dev"
 STARTUP_SCAN_BUDGET_SEC = 22
+
+TZ_TAIPEI = dt.timezone(dt.timedelta(hours=8))
+
+
+def now_tw() -> dt.datetime:
+    return dt.datetime.now(tz=TZ_TAIPEI)
+
+
+def is_market_hours_tw(ts: Optional[dt.datetime] = None) -> bool:
+    """台股常規交易時段（簡化版，不含例假日/特殊開收盤）。
+
+    目的：收盤後不要再一直跑「即時抓取 + 掃描進度」，避免你看到一直重複跑。
+    """
+    t = ts or now_tw()
+    if t.weekday() >= 5:
+        return False
+    lt = t.timetz().replace(tzinfo=None)
+    return dt.time(9, 0) <= lt <= dt.time(13, 35)
 
 
 def safe_dataframe(df: pd.DataFrame):
@@ -826,7 +850,10 @@ with st.sidebar:
     universe_n = st.slider("掃描檔數", 20, 300, 20, 10)
     topn = st.slider("排行榜 TopN", 5, 30, 10, 1)
     refresh_sec = st.slider("建議手動刷新秒數", 5, 60, 10, 5)
-    if use_external:
+    _mh = is_market_hours_tw()
+    if use_external and not _mh:
+        st.caption("已收盤/非交易時段：即時抓取會自動暫停，改用最近收盤結果（避免一直重複跑掃描）。")
+    elif use_external:
         st.caption("建議每 10~20 秒重新整理一次，避免資料源壓力。")
     else:
         st.caption("離線保底：不連外抓即時資料，即時性較差，但可確保頁面可用。")
@@ -848,7 +875,71 @@ if not symbol_map:
     for s in get_base_pool():
         symbol_map[s] = LOCAL_SYMBOL_NAME_MAP.get(s, s)
 
+def _latest_close_date(symbol: str = "2330") -> str:
+    try:
+        df = fetch_daily_history(symbol)
+        if df is not None and not df.empty and "date" in df.columns:
+            return pd.to_datetime(df["date"].iloc[-1]).date().isoformat()
+    except Exception:
+        pass
+    return now_tw().date().isoformat()
+
+
+@st.cache_data(ttl=21600)
+def compute_market_after_hours(symbols: tuple, snapshot_date: str) -> tuple[pd.DataFrame, Dict]:
+    """收盤/非交易時段：只用日K（收盤）計算，不抓即時。"""
+    rows = []
+    fallback_history_count = 0
+    fallback_dates = set()
+    for sym in symbols:
+        try:
+            daily = fetch_daily_history(sym)
+        except Exception:
+            daily = None
+        if daily is None or len(daily) < 120:
+            daily = generate_local_history(sym)
+            fallback_history_count += 1
+            try:
+                d = pd.to_datetime(daily.iloc[-1].get("date", pd.NaT)).date().isoformat()
+            except Exception:
+                d = "unknown"
+            if d and d != "unknown":
+                fallback_dates.add(d)
+
+        daily2 = add_indicators(daily)
+        result = score_symbol(daily2, market_aligned=True)
+        reasons = "、".join(result["reasons"]) if result["reasons"] else "-"
+        regime = "順勢" if "逆勢於大盤" not in reasons else "逆勢"
+        risk = "低" if result["reversal_risk"] < 0.25 else "中" if result["reversal_risk"] < 0.5 else "高"
+        rows.append(
+            {
+                "代碼": sym,
+                "名稱": symbol_map.get(sym, sym),
+                "狀態": result["state"],
+                "TrendScore": result["trend_score"],
+                "Confidence": result["confidence"],
+                "ReversalRisk": result["reversal_risk"],
+                "建議": result["action"],
+                "策略摘要": reasons,
+                "順逆勢": regime,
+                "風險": risk,
+                "_detail": result,
+            }
+        )
+
+    meta = {
+        "snapshot_date": snapshot_date,
+        "fallback_history_count": fallback_history_count,
+        "fallback_dates": sorted(list(fallback_dates)),
+    }
+    return pd.DataFrame(rows), meta
+
+
 market = pd.DataFrame()
+market_hours = is_market_hours_tw()
+# 單檔即時/即時抓取只在交易時段啟用；收盤後自動降級為收盤快照（避免一直重跑）
+use_external_effective = bool(use_external and market_hours)
+
 if mock_demo:
     market = generate_mock_snapshot(n=universe_n, seed=42)
 elif not use_external:
@@ -877,6 +968,23 @@ elif not use_external:
             }
         )
     market = pd.DataFrame(rows)
+elif not market_hours:
+    # 收盤/非交易時段：避免一直重複跑即時掃描進度；改用收盤日K結果（每日快照）
+    snapshot_date = _latest_close_date("2330")
+    st.info(f"目前非交易時段（含收盤後/週末），已自動改用收盤結果計算（資料日期：{snapshot_date}）。")
+    symbols = pad_symbols_to_target(get_base_pool(), max(20, universe_n))
+    market, meta = compute_market_after_hours(tuple(symbols), snapshot_date)
+    if meta.get("fallback_history_count", 0) > 0:
+        dates = meta.get("fallback_dates") or []
+        if len(dates) == 0:
+            dates_text = "unknown"
+        elif len(dates) <= 3:
+            dates_text = ", ".join(dates)
+        else:
+            dates_text = f"{dates[0]} ~ {dates[-1]}"
+        st.warning(
+            f"有 {meta['fallback_history_count']} 檔歷史來源不可用，已改用本地備援資料（資料日期：{dates_text}）。"
+        )
 else:
     st.caption("自動模式：優先使用真實即時資料；若來源暫時不可用，會自動回退本地保底（不中斷、不顯示股票池不可用致命錯誤）。")
     st.info("健康檢查保底：若外部股票池/即時 API 失敗，仍會維持可掃描清單與單檔查詢。")
@@ -1216,7 +1324,8 @@ if manual_q:
     if resolved is None:
         st.warning("找不到符合的股票代碼，請改輸入 4~6 碼代號或完整名稱。")
     else:
-        if use_external:
+        if use_external_effective:
+            # 交易時段：日K + 即時價量
             daily_m = fetch_daily_history(resolved)
             if daily_m is None or len(daily_m) < 120:
                 daily_m = generate_local_history(resolved)
@@ -1236,7 +1345,26 @@ if manual_q:
                     "low": float(b["low"]),
                     "volume": float(b["volume"]),
                 }
+        elif use_external and not market_hours:
+            # 收盤/非交易時段：不要再抓即時，改用收盤日K
+            daily_m = fetch_daily_history(resolved)
+            if daily_m is None or len(daily_m) < 120:
+                daily_m = generate_local_history(resolved)
+            try:
+                d_m = pd.to_datetime(daily_m.iloc[-1].get("date", pd.NaT)).date().isoformat()
+            except Exception:
+                d_m = "unknown"
+            st.info(f"目前非交易時段，單檔即時抓取已暫停，以下以收盤日K估算（資料日期：{d_m}）。")
+            b = daily_m.iloc[-1]
+            rt_m = {
+                "last": float(b["close"]),
+                "open": float(b["open"]),
+                "high": float(b["high"]),
+                "low": float(b["low"]),
+                "volume": float(b["volume"]),
+            }
         else:
+            # 離線保底：完全不連外
             daily_m = generate_local_history(resolved)
             try:
                 d_m = pd.to_datetime(daily_m.iloc[-1].get("date", pd.NaT)).date().isoformat()
