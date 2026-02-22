@@ -4,8 +4,9 @@ address = "0.0.0.0"
 enableCORS = false
 enableXsrfProtection = false
 port = 8501
-# Use Streamlit defaults for websocket compression and keepalive behavior on Render.
-# Explicitly set ping interval to reduce idle proxy disconnects.
+# Render's edge proxies can break Streamlit websocket negotiation when compression is enabled.
+# Force-disable compression and keep ping interval short to stabilize session bootstrap.
+enableWebsocketCompression = false
 websocketPingInterval = 30
 
 [browser]
