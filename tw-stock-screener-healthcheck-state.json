@@ -1,10 +1,10 @@
 {
   "service": "https://tw-stock-screener.onrender.com",
-  "lastCheckAt": "2026-02-22T06:46:00+08:00",
+  "lastCheckAt": "2026-02-22T08:11:00+08:00",
   "lastHealth": "unhealthy",
-  "lastReason": "Homepage still renders blank Streamlit skeleton (non-interactive) and browser console repeatedly shows wss /_stcore/stream closed before establish while /_stcore/health is ok; likely deployment/platform sync lag.",
-  "lastBuildText": "unknown-from-ui",
-  "pendingDeployStaleRounds": 3,
-  "lastFixCommit": "232b091",
-  "lastFixSummary": "Hardened Streamlit Render startup for stable browser sessions."
+  "lastReason": "Homepage still shows only Streamlit shell/banner; no interactive list/query section rendered.",
+  "lastBuildText": "index.Drusyo5m.js (stale)",
+  "pendingDeployStaleRounds": 15,
+  "lastFixCommit": "8241e00",
+  "lastFixSummary": "Pin Streamlit to 1.32.2 (with tornado >=6.3,<6.5) to improve Render websocket session stability."
 }

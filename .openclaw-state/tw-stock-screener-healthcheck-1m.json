@@ -1,7 +1,14 @@
 {
-  "lastStatus": "healthy",
-  "lastBuild": "build 2026-02-22-yahoo-direct-v1",
-  "lastIssue": "",
-  "staleDeployCount": 0,
-  "updatedAt": "2026-02-22T05:51:00+08:00"
+  "lastStatus": "unhealthy",
+  "lastBuild": "index.Drusyo5m.js",
+  "lastIssue": "blank Streamlit shell persists; UI blocks not rendered",
+  "staleDeployCount": 15,
+  "lastFixCommit": "a2e6ec5",
+  "updatedAt": "2026-02-22T08:11:00+08:00",
+  "checks": {
+    "homepage": "streamlit-shell-only",
+    "healthEndpoint": "ok",
+    "uiInteractive": false,
+    "errorTextFound": false
+  }
 }
