@@ -20,7 +20,8 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-22-render-ws-compat-v9-streamlit132"
+APP_VERSION = "2026-02-22-render-ws-compat-v10-startup-budget"
+STARTUP_SCAN_BUDGET_SEC = 22
 
 
 # ----------------------------
@@ -876,12 +877,23 @@ else:
     rows = []
     fallback_history_count = 0
     symbol_error_count = 0
+    startup_budget_hit = False
+    scan_started_at = time.time()
     progress = st.progress(0, text="載入即時資料中...") if symbols else None
 
     for i, sym in enumerate(symbols, start=1):
+        use_fast_fallback = (time.time() - scan_started_at) >= STARTUP_SCAN_BUDGET_SEC
+        if use_fast_fallback:
+            startup_budget_hit = True
+
         try:
-            daily = fetch_daily_history(sym)
-            rt = fetch_realtime(sym)
+            if use_fast_fallback:
+                daily = generate_local_history(sym)
+                rt = None
+                fallback_history_count += 1
+            else:
+                daily = fetch_daily_history(sym)
+                rt = fetch_realtime(sym)
             if daily is None or len(daily) < 120:
                 daily = generate_local_history(sym)
                 fallback_history_count += 1
@@ -937,6 +949,8 @@ else:
         st.info(f"有 {fallback_history_count} 檔即時歷史來源不可用，已改用本地備援資料持續計算。")
     if symbol_error_count > 0:
         st.info(f"有 {symbol_error_count} 檔即時處理失敗，已自動以本地備援資料補齊。")
+    if startup_budget_hit:
+        st.info("為確保頁面可快速互動，部分標的已先以本地備援資料載入。")
 
     if rows:
         market = pd.DataFrame(rows)
