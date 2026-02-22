@@ -1,10 +1,10 @@
 {
   "service": "https://tw-stock-screener.onrender.com",
-  "lastCheckAt": "2026-02-22T09:11:30+08:00",
+  "lastCheckAt": "2026-02-22T09:33:00+08:00",
   "lastHealth": "unhealthy",
-  "lastReason": "Homepage still renders only Streamlit shell/banner and browser console keeps failing websocket to /_stcore/stream, so users cannot reach interactive stock list/query UI.",
-  "lastBuildText": "new fix commit 93df18b pushed; remote still serves old frontend bundle index.Drusyo5m.js, likely waiting Render deployment/platform sync",
-  "pendingDeployStaleRounds": 2,
-  "lastFixCommit": "93df18b",
-  "lastFixSummary": "Reverted Streamlit runtime to 1.32.2 and removed aggressive websocket flags in Render start command while keeping conservative config defaults for proxy compatibility."
+  "lastReason": "Homepage is still stuck on Streamlit shell-only page in browser snapshot (banner only), without interactive stock list/query blocks.",
+  "lastBuildText": "new fix pushed (7e219b0), but production still shows old shell-only behavior; waiting deployment/platform sync",
+  "pendingDeployStaleRounds": 9,
+  "lastFixCommit": "7e219b0",
+  "lastFixSummary": "Pinned Streamlit/Tornado websocket stack and simplified Render start command to reduce proxy handshake failures."
 }
