@@ -1,8 +1,8 @@
 {
   "service": "https://tw-stock-screener.onrender.com",
-  "lastCheckAt": "2026-02-22T10:51:35+08:00",
+  "lastCheckAt": "2026-02-22T11:12:30+08:00",
   "lastHealth": "healthy",
-  "lastReason": "web_fetch: / returns Streamlit shell and /_stcore/health returns ok; browser(openclaw) snapshot shows full app UI with 資料模式 + sliders/radios; no '無法取得台股股票池'; build text unchanged.",
+  "lastReason": "web_fetch: / returns Streamlit shell and /_stcore/health returns ok; browser(openclaw) snapshot confirms interactive UI (資料模式 radio options + sliders + app header/content), no blank Running shell, and no `無法取得台股股票池` error.",
   "lastBuildText": "build 2026-02-22-yahoo-direct-v1",
   "pendingDeployStaleRounds": 0,
   "lastFixCommit": "a4762d3",
