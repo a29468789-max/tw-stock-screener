@@ -3,9 +3,8 @@ headless = true
 enableCORS = false
 enableXsrfProtection = false
 port = 8501
-enableWebsocketCompression = true
-websocketPingInterval = 20
-# Keep this aligned with Render startCommand to avoid ws handshake mismatches
+enableWebsocketCompression = false
+# Keep websocket settings conservative for Render free proxy compatibility
 
 [browser]
 gatherUsageStats = false
