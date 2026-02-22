@@ -4,6 +4,7 @@ enableCORS = false
 enableXsrfProtection = false
 port = 8501
 enableWebsocketCompression = false
+websocketPingInterval = 30
 # Keep this aligned with Render startCommand to avoid ws handshake mismatches
 
 [browser]
