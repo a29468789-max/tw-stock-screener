@@ -802,13 +802,17 @@ st.caption("日K主導，盤中用即時價量更新今日日K後重算分數。
 st.caption(f"build {APP_VERSION}")
 
 with st.sidebar:
-    st.header("資料模式")
-    # 預設改為穩定模式，避免外部來源波動造成整體不可用
-    mode = st.radio("選擇", ["穩定查詢（不依賴外部）", "真實台股即時", "Mock示範"], index=0)
+    st.header("資料來源")
+    # 合併「穩定查詢」與「真實即時」：即時優先，失敗自動回退本地保底
+    use_external = st.checkbox("啟用真實即時資料（失敗自動回退穩定）", value=True)
+    mock_demo = st.checkbox("Mock示範", value=False)
     universe_n = st.slider("掃描檔數", 20, 300, 20, 10)
     topn = st.slider("排行榜 TopN", 5, 30, 10, 1)
     refresh_sec = st.slider("建議手動刷新秒數", 5, 60, 10, 5)
-    st.caption("真實模式建議每 10~20 秒重新整理一次，避免資料源壓力。")
+    if use_external:
+        st.caption("建議每 10~20 秒重新整理一次，避免資料源壓力。")
+    else:
+        st.caption("離線保底：不連外抓即時資料，即時性較差，但可確保頁面可用。")
 
 symbol_map = {**{s: s for s in CORE_SYMBOLS}, **LOCAL_SYMBOL_NAME_MAP}
 # 啟動健康優先：首屏預設只用本地名稱表，避免冷啟動額外網路請求拖慢連線建立。
@@ -828,10 +832,10 @@ if not symbol_map:
         symbol_map[s] = LOCAL_SYMBOL_NAME_MAP.get(s, s)
 
 market = pd.DataFrame()
-if mode == "Mock示範":
+if mock_demo:
     market = generate_mock_snapshot(n=universe_n, seed=42)
-elif mode == "穩定查詢（不依賴外部）":
-    st.caption("穩定模式：完全使用本地股票池與本地歷史資料，不依賴外部 API。")
+elif not use_external:
+    st.caption("離線保底：不連外抓即時資料；使用本地股票池與本地歷史資料，確保頁面可用（即時性較差）。")
     symbols = pad_symbols_to_target(get_base_pool(), universe_n)
     rows = []
     for sym in symbols:
@@ -857,7 +861,7 @@ elif mode == "穩定查詢（不依賴外部）":
         )
     market = pd.DataFrame(rows)
 else:
-    st.caption("即時來源若暫時不可用，系統會自動切換本地股票池與單檔備援查詢（不中斷、不顯示股票池不可用致命錯誤）。")
+    st.caption("自動模式：優先使用真實即時資料；若來源暫時不可用，會自動回退本地保底（不中斷、不顯示股票池不可用致命錯誤）。")
     st.info("健康檢查保底：若外部股票池/即時 API 失敗，仍會維持可掃描清單與單檔查詢。")
     # Local-first：先以本地池直接建立可掃描 universe（外部來源僅補強，不作為啟動前提）
     symbols_local = pad_symbols_to_target(get_base_pool(), max(20, universe_n))
@@ -1172,13 +1176,25 @@ if manual_q:
     if resolved is None:
         st.warning("找不到符合的股票代碼，請改輸入 4~6 碼代號或完整名稱。")
     else:
-        daily_m = fetch_daily_history(resolved)
-        if daily_m is None or len(daily_m) < 120:
-            daily_m = generate_local_history(resolved)
-            st.info(f"{resolved} 歷史來源暫時不可用，已改用本地備援資料。")
+        if use_external:
+            daily_m = fetch_daily_history(resolved)
+            if daily_m is None or len(daily_m) < 120:
+                daily_m = generate_local_history(resolved)
+                st.info(f"{resolved} 歷史來源暫時不可用，已改用本地備援資料。")
 
-        rt_m = fetch_realtime(resolved)
-        if rt_m is None:
+            rt_m = fetch_realtime(resolved)
+            if rt_m is None:
+                b = daily_m.iloc[-1]
+                rt_m = {
+                    "last": float(b["close"]),
+                    "open": float(b["open"]),
+                    "high": float(b["high"]),
+                    "low": float(b["low"]),
+                    "volume": float(b["volume"]),
+                }
+        else:
+            st.info("離線保底：未連外抓即時資料，以下以本地備援資料估算。")
+            daily_m = generate_local_history(resolved)
             b = daily_m.iloc[-1]
             rt_m = {
                 "last": float(b["close"]),
@@ -1187,6 +1203,7 @@ if manual_q:
                 "low": float(b["low"]),
                 "volume": float(b["volume"]),
             }
+
         df_m = add_indicators(upsert_today_bar(daily_m, rt_m))
         d_m = score_symbol(df_m, market_aligned=True)
         st.info(f"{resolved} {symbol_map.get(resolved, resolved)} | 狀態：{d_m['state']} | 建議：{d_m['action']}")
