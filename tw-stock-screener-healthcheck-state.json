@@ -1,11 +1,11 @@
 {
   "service": "https://tw-stock-screener.onrender.com",
-  "lastCheckAt": "2026-02-22T10:29:00+08:00",
+  "lastCheckAt": "2026-02-22T10:51:35+08:00",
   "lastHealth": "healthy",
-  "lastReason": "web_fetch: / returns Streamlit shell and /_stcore/health returns ok; browser(openclaw) after short wait shows full app UI (資料模式/排行榜/多個可互動表格) and no \"無法取得台股股票池\".",
+  "lastReason": "web_fetch: / returns Streamlit shell and /_stcore/health returns ok; browser(openclaw) snapshot shows full app UI with 資料模式 + sliders/radios; no '無法取得台股股票池'; build text unchanged.",
   "lastBuildText": "build 2026-02-22-yahoo-direct-v1",
   "pendingDeployStaleRounds": 0,
   "lastFixCommit": "a4762d3",
   "lastFixSummary": "Enforced websocket stability flags directly in Render start command (--server.enableWebsocketCompression false --server.websocketPingInterval 30) so runtime cannot ignore .streamlit config during bootstrap.",
-  "lastTransition": "recovered"
+  "lastTransition": "healthy"
 }
