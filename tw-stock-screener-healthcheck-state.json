@@ -1,11 +1,11 @@
-{
-  "service": "https://tw-stock-screener.onrender.com",
-  "lastCheckAt": "2026-02-22T11:12:30+08:00",
-  "lastHealth": "healthy",
-  "lastReason": "web_fetch: / returns Streamlit shell and /_stcore/health returns ok; browser(openclaw) snapshot confirms interactive UI (資料模式 radio options + sliders + app header/content), no blank Running shell, and no `無法取得台股股票池` error.",
-  "lastBuildText": "build 2026-02-22-yahoo-direct-v1",
-  "pendingDeployStaleRounds": 0,
-  "lastFixCommit": "a4762d3",
-  "lastFixSummary": "Enforced websocket stability flags directly in Render start command (--server.enableWebsocketCompression false --server.websocketPingInterval 30) so runtime cannot ignore .streamlit config during bootstrap.",
-  "lastTransition": "healthy"
+﻿{
+    "service":  "https://tw-stock-screener.onrender.com",
+    "lastCheckAt":  "2026-02-22T11:14:40+08:00",
+    "lastHealth":  "healthy",
+    "lastReason":  "web_fetch: / returns Streamlit shell and /_stcore/health returns ok; browser snapshot confirms interactive controls (資料模式選單、滑桿與主標題內容) and no `無法取得台股股票池`.",
+    "lastBuildText":  "build 2026-02-22-yahoo-direct-v1",
+    "pendingDeployStaleRounds":  0,
+    "lastFixCommit":  "a4762d3",
+    "lastFixSummary":  "Enforced websocket stability flags directly in Render start command (--server.enableWebsocketCompression false --server.websocketPingInterval 30) so runtime cannot ignore .streamlit config during bootstrap.",
+    "lastTransition":  "healthy"
 }
