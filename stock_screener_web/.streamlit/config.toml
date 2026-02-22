@@ -3,8 +3,8 @@ headless = true
 enableCORS = false
 enableXsrfProtection = false
 port = 8501
-enableWebsocketCompression = false
-# Disable websocket compression to improve compatibility with Render's proxy upgrades
+enableWebsocketCompression = true
+# Keep websocket compression enabled for Render proxy compatibility
 
 [browser]
 gatherUsageStats = false
