@@ -1,11 +1,11 @@
 {
   "service": "https://tw-stock-screener.onrender.com",
-  "lastCheckAt": "2026-02-22T10:08:00+08:00",
-  "lastHealth": "unhealthy",
-  "lastReason": "Homepage remains Streamlit shell-only in browser snapshot; /_stcore/health is ok but interactive stock list/query UI is still not rendered.",
-  "lastBuildText": "Fix commit 6f3abb1 pushed; currently still seeing stale shell-only page, likely waiting Render deployment/platform sync.",
-  "pendingDeployStaleRounds": 1,
-  "lastFixCommit": "6f3abb1",
-  "lastFixSummary": "Disabled Streamlit websocket compression in Render start command to mitigate shell-only page when websocket handshake/compression fails behind platform proxy.",
-  "lastTransition": "deploy_wait"
+  "lastCheckAt": "2026-02-22T10:29:00+08:00",
+  "lastHealth": "healthy",
+  "lastReason": "web_fetch: / returns Streamlit shell and /_stcore/health returns ok; browser(openclaw) after short wait shows full app UI (資料模式/排行榜/多個可互動表格) and no \"無法取得台股股票池\".",
+  "lastBuildText": "build 2026-02-22-yahoo-direct-v1",
+  "pendingDeployStaleRounds": 0,
+  "lastFixCommit": "a4762d3",
+  "lastFixSummary": "Enforced websocket stability flags directly in Render start command (--server.enableWebsocketCompression false --server.websocketPingInterval 30) so runtime cannot ignore .streamlit config during bootstrap.",
+  "lastTransition": "recovered"
 }
