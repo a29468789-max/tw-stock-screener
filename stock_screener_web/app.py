@@ -20,8 +20,16 @@ except Exception:
     twstock = None
 
 st.set_page_config(page_title="台股波段決策輔助", layout="wide")
-APP_VERSION = "2026-02-22-render-ws-compat-v10-startup-budget"
+APP_VERSION = "2026-02-22-render-ws-compat-v11-df-compat"
 STARTUP_SCAN_BUDGET_SEC = 22
+
+
+def safe_dataframe(df: pd.DataFrame):
+    # 與舊版 Streamlit 相容：部分版本不支援 hide_index 參數
+    try:
+        st.dataframe(df, use_container_width=True, hide_index=True)
+    except TypeError:
+        st.dataframe(df, use_container_width=True)
 
 
 # ----------------------------
@@ -1038,15 +1046,15 @@ c1, c2, c3 = st.columns(3)
 with c1:
     st.subheader("強多 Top")
     strong_long = market[market["狀態"] == "強多"].sort_values(["TrendScore", "Confidence"], ascending=[False, False]).head(topn)
-    st.dataframe(strong_long.drop(columns=["_detail"], errors="ignore"), use_container_width=True, hide_index=True)
+    safe_dataframe(strong_long.drop(columns=["_detail"], errors="ignore"))
 with c2:
     st.subheader("強空 Top")
     strong_short = market[market["狀態"] == "強空"].sort_values(["TrendScore", "Confidence"], ascending=[True, False]).head(topn)
-    st.dataframe(strong_short.drop(columns=["_detail"], errors="ignore"), use_container_width=True, hide_index=True)
+    safe_dataframe(strong_short.drop(columns=["_detail"], errors="ignore"))
 with c3:
     st.subheader("盤整待突破 Top")
     range_top = market[market["狀態"] == "盤整"].sort_values(["Confidence"], ascending=[False]).head(topn)
-    st.dataframe(range_top.drop(columns=["_detail"], errors="ignore"), use_container_width=True, hide_index=True)
+    safe_dataframe(range_top.drop(columns=["_detail"], errors="ignore"))
 
 st.divider()
 st.subheader("單檔決策報告")
@@ -1149,9 +1157,9 @@ if kw:
         market["代碼"].astype(str).str.contains(kw, regex=False, na=False)
         | market["名稱"].astype(str).str.contains(kw, regex=False, na=False)
     ]
-    st.dataframe(q.drop(columns=["_detail"], errors="ignore"), use_container_width=True, hide_index=True)
+    safe_dataframe(q.drop(columns=["_detail"], errors="ignore"))
 else:
-    st.dataframe(market.drop(columns=["_detail"], errors="ignore"), use_container_width=True, hide_index=True)
+    safe_dataframe(market.drop(columns=["_detail"], errors="ignore"))
 
 st.divider()
 st.subheader("快速查詢個股（即使不在目前掃描清單也可查）")
