@@ -1,0 +1,12 @@
+{
+  "service": "https://tw-stock-screener.onrender.com",
+  "lastCheckAt": "2026-02-22T11:18:00+08:00",
+  "healthy": true,
+  "build": "2026-02-22-yahoo-direct-v1",
+  "healthEndpoint": "ok",
+  "shellOnly": false,
+  "errorTextFound": false,
+  "interactiveAreaFound": true,
+  "consecutiveDeploymentStaleRounds": 0,
+  "lastAction": "none"
+}
