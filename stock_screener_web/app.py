@@ -849,14 +849,13 @@ with st.sidebar:
     mock_demo = st.checkbox("Mock示範", value=False)
     universe_n = st.slider("掃描檔數", 20, 300, 20, 10)
     topn = st.slider("排行榜 TopN", 5, 30, 10, 1)
-    refresh_sec = st.slider("建議手動刷新秒數", 5, 60, 10, 5)
     _mh = is_market_hours_tw()
     if use_external and not _mh:
         st.caption("已收盤/非交易時段：即時抓取會自動暫停，改用最近收盤結果（避免一直重複跑掃描）。")
     elif use_external:
-        st.caption("建議每 10~20 秒重新整理一次，避免資料源壓力。")
+        st.caption("資料會隨你重新整理網頁自動更新；盤中若想更即時，可自行多刷新幾次。")
     else:
-        st.caption("離線保底：不連外抓即時資料，即時性較差，但可確保頁面可用。")
+        st.caption("離線保底：不連外抓即時資料；資料會隨你重新整理網頁自動更新。")
 
 symbol_map = {**{s: s for s in CORE_SYMBOLS}, **LOCAL_SYMBOL_NAME_MAP}
 # 啟動健康優先：首屏預設只用本地名稱表，避免冷啟動額外網路請求拖慢連線建立。
@@ -1386,4 +1385,4 @@ if manual_q:
         st.write(f"進場參考：{d_m.get('entry', 'N/A')}")
         st.write(f"停損：{d_m.get('stop_loss', 'N/A')} | 停利：{d_m.get('take_profit', 'N/A')}")
 
-st.caption(f"已載入 {len(market)} 檔。建議每 {refresh_sec} 秒手動刷新，獲得盤中最新狀態。")
+st.caption(f"已載入 {len(market)} 檔。重新整理網頁會自動更新最新狀態。")
