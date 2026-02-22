@@ -797,6 +797,23 @@ def generate_local_history(symbol: str, days: int = 260) -> pd.DataFrame:
 # ----------------------------
 # UI
 # ----------------------------
+# 預設單檔即時查詢代號
+if "manual_symbol_query" not in st.session_state:
+    st.session_state["manual_symbol_query"] = "2330"
+
+# 右上角快速搜尋（代號/名稱）→ 導向單檔即時查詢
+_top_l, _top_r = st.columns([3, 1])
+with _top_r:
+    _q = st.text_input(
+        "搜尋",
+        value="",
+        placeholder="搜尋 2330 / 台積電",
+        key="global_search",
+        label_visibility="collapsed",
+    )
+if isinstance(_q, str) and _q.strip():
+    st.session_state["manual_symbol_query"] = _q.strip()
+
 st.title("台股全市場多空波段決策輔助（即時版）")
 st.caption("日K主導，盤中用即時價量更新今日日K後重算分數。")
 st.caption(f"build {APP_VERSION}")
@@ -1187,7 +1204,10 @@ else:
 
 st.divider()
 st.subheader("快速查詢個股（即使不在目前掃描清單也可查）")
-manual_q = st.text_input("輸入代碼或名稱，例如：2330 / 00878 / 台積電", key="manual_symbol_query")
+manual_q = st.text_input(
+    "輸入代碼或名稱，例如：2330 / 00878 / 台積電",
+    key="manual_symbol_query",
+)
 if manual_q:
     resolved = resolve_symbol(manual_q, symbol_map)
     if resolved is None and manual_q.strip().isdigit() and 4 <= len(manual_q.strip()) <= 6:
