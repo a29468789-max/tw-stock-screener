@@ -1,10 +1,11 @@
 {
   "service": "https://tw-stock-screener.onrender.com",
-  "lastCheckAt": "2026-02-22T09:49:00+08:00",
+  "lastCheckAt": "2026-02-22T10:08:00+08:00",
   "lastHealth": "unhealthy",
-  "lastReason": "Homepage still stays at Streamlit shell-only page (banner only); browser console keeps reporting wss://.../_stcore/stream closed before establishment.",
-  "lastBuildText": "new fix commit 9b87ddb pushed, but site still serves old frontend bundle (index.Drusyo5m.js) — likely waiting for Render deployment/platform sync",
-  "pendingDeployStaleRounds": 2,
-  "lastFixCommit": "9b87ddb",
-  "lastFixSummary": "Pinned Streamlit to 1.32.2 with Tornado 6.4.2 to improve Render websocket handshake stability."
+  "lastReason": "Homepage remains Streamlit shell-only in browser snapshot; /_stcore/health is ok but interactive stock list/query UI is still not rendered.",
+  "lastBuildText": "Fix commit 6f3abb1 pushed; currently still seeing stale shell-only page, likely waiting Render deployment/platform sync.",
+  "pendingDeployStaleRounds": 1,
+  "lastFixCommit": "6f3abb1",
+  "lastFixSummary": "Disabled Streamlit websocket compression in Render start command to mitigate shell-only page when websocket handshake/compression fails behind platform proxy.",
+  "lastTransition": "deploy_wait"
 }
