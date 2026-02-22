@@ -7,4 +7,4 @@ services:
     healthCheckPath: /_stcore/health
     rootDir: stock_screener_web
     buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false --server.fileWatcherType=none --server.runOnSave=false --server.enableWebsocketCompression=false --server.websocketPingInterval=30
+    startCommand: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false --server.fileWatcherType=none --server.runOnSave=false --server.enableWebsocketCompression=true --server.websocketPingInterval=20
