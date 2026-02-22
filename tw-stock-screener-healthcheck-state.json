@@ -1,10 +1,10 @@
 {
   "service": "https://tw-stock-screener.onrender.com",
-  "lastCheckAt": "2026-02-22T08:24:00+08:00",
+  "lastCheckAt": "2026-02-22T09:11:30+08:00",
   "lastHealth": "unhealthy",
-  "lastReason": "Homepage remains Streamlit shell only; browser console shows repeated WebSocket handshake failure to /_stcore/stream, while /_stcore/health is ok.",
-  "lastBuildText": "index.Drusyo5m.js (stale)",
-  "pendingDeployStaleRounds": 19,
-  "lastFixCommit": "8241e00",
-  "lastFixSummary": "Pin Streamlit to 1.32.2 (with tornado >=6.3,<6.5) to improve Render websocket session stability."
+  "lastReason": "Homepage still renders only Streamlit shell/banner and browser console keeps failing websocket to /_stcore/stream, so users cannot reach interactive stock list/query UI.",
+  "lastBuildText": "new fix commit 93df18b pushed; remote still serves old frontend bundle index.Drusyo5m.js, likely waiting Render deployment/platform sync",
+  "pendingDeployStaleRounds": 2,
+  "lastFixCommit": "93df18b",
+  "lastFixSummary": "Reverted Streamlit runtime to 1.32.2 and removed aggressive websocket flags in Render start command while keeping conservative config defaults for proxy compatibility."
 }
