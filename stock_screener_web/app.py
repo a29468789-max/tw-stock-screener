@@ -545,6 +545,375 @@ def _default_headers() -> Dict[str, str]:
     }
 
 
+# ----------------------------
+# ETF dividend calendar (V1)
+# ----------------------------
+def _parse_roc_date(s: Optional[str]) -> Optional[dt.date]:
+    """Parse ROC date like '115年03月12日' to datetime.date (2026-03-12)."""
+    if not s or not isinstance(s, str):
+        return None
+    m = re.search(r"(\d{2,3})年(\d{1,2})月(\d{1,2})日", s)
+    if not m:
+        return None
+    try:
+        y = int(m.group(1)) + 1911
+        mo = int(m.group(2))
+        d = int(m.group(3))
+        out = dt.date(y, mo, d)
+        # sanity: filter out clearly-wrong years
+        if out.year < 1990 or out.year > (now_tw().year + 1):
+            return None
+        return out
+    except Exception:
+        return None
+
+
+def _strip_html_br(text: str) -> str:
+    return re.sub(r"<br\s*/?>", "\n", str(text or ""), flags=re.I)
+
+
+def _split_multi_codes(cell: str) -> List[str]:
+    """Split TWSE list cells like '006205(新臺幣)<br>00625K(人民幣)' into codes."""
+    s = _strip_html_br(cell)
+    parts = []
+    for line in s.splitlines():
+        token = line.strip()
+        if not token:
+            continue
+        # remove trailing annotations like (新臺幣)
+        token = re.sub(r"\(.*?\)", "", token).strip()
+        if token:
+            parts.append(token)
+    return parts
+
+
+def _is_leverage_or_inverse(code: str, name: str, index_name: str) -> bool:
+    code = (code or "").strip().upper()
+    text = f"{name or ''} {index_name or ''}"
+    if re.search(r"[LR]$", code):
+        return True
+    keywords = ["正2", "反1", "反2", "槓桿", "反向", "兩倍", "2倍", "二倍", "Leveraged", "Inverse"]
+    return any(k in text for k in keywords)
+
+
+def _is_commodity(code: str, name: str, index_name: str) -> bool:
+    text = f"{code or ''} {name or ''} {index_name or ''}"
+    keywords = [
+        "黃金",
+        "原油",
+        "石油",
+        "白銀",
+        "銅",
+        "天然氣",
+        "商品",
+        "農產品",
+        "玉米",
+        "小麥",
+        "黃豆",
+        "咖啡",
+        "棉花",
+        "糖",
+        "金屬",
+        "GSCI",
+        "Crude Oil",
+        "Gold",
+    ]
+    return any(k in text for k in keywords)
+
+
+def _is_tech_proxy(name: str, index_name: str) -> bool:
+    """暫時用名稱/指數關鍵字推定科技主題（不是嚴格 '科技比重>50%'）。"""
+    text = f"{name or ''} {index_name or ''}"
+    keywords = ["科技", "半導體", "AI", "人工智慧", "資訊", "電腦", "通訊", "5G", "雲端", "電子", "晶片", "資安", "網路"]
+    return any(k in text for k in keywords)
+
+
+@st.cache_data(ttl=3600)
+def fetch_twse_etf_list_v1() -> pd.DataFrame:
+    url = "https://www.twse.com.tw/rwd/zh/ETF/list"
+    res = requests.get(url, params={"response": "json"}, headers=_default_headers(), timeout=15)
+    j = res.json() if res.ok else {}
+    data = j.get("data") or []
+    rows = []
+    for r in data:
+        if not r or len(r) < 5:
+            continue
+        listing_date, code_cell, name_cell, issuer, index_name = r[:5]
+        codes = _split_multi_codes(str(code_cell))
+        names = _split_multi_codes(str(name_cell))
+        listing_dates = _split_multi_codes(str(listing_date))
+        # best-effort pair: use first name/date for all codes if lengths mismatch
+        name0 = (names[0] if names else str(name_cell)).strip()
+        date0 = (listing_dates[0] if listing_dates else str(listing_date)).strip()
+        for c in codes or []:
+            c = c.strip().upper()
+            if not re.match(r"^[0-9A-Z]{4,6}$", c):
+                continue
+            rows.append(
+                {
+                    "stockNo": c,
+                    "stockName": name0,
+                    "issuer": issuer,
+                    "indexName": index_name,
+                    "listingDate": date0,
+                    "exchange": "TWSE",
+                }
+            )
+    return pd.DataFrame(rows).drop_duplicates(subset=["exchange", "stockNo"]).reset_index(drop=True)
+
+
+@st.cache_data(ttl=900)
+def fetch_twse_etf_div_v1() -> pd.DataFrame:
+    url = "https://www.twse.com.tw/rwd/zh/ETF/etfDiv"
+    res = requests.get(url, params={"response": "json"}, headers=_default_headers(), timeout=20)
+    j = res.json() if res.ok else {}
+    data = j.get("data") or []
+    rows = []
+    for r in data:
+        # expected: [code,name,divDate,inBaseDate,inDate,amount,desc,year]
+        if not r or len(r) < 5:
+            continue
+        code = str(r[0]).strip().upper()
+        name = str(r[1]).strip()
+        div_date = _parse_roc_date(r[2])
+        base_date = _parse_roc_date(r[3])
+        pay_date = _parse_roc_date(r[4])
+        amount = r[5] if len(r) >= 6 else None
+        rows.append(
+            {
+                "stockNo": code,
+                "stockName": name,
+                "divDate": div_date,
+                "inBaseDate": base_date,
+                "inDate": pay_date,
+                "amount": amount,
+                "exchange": "TWSE",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+@st.cache_data(ttl=3600)
+def fetch_tpex_etf_list_v1() -> pd.DataFrame:
+    url = "https://info.tpex.org.tw/api/etfFilter"
+    res = requests.get(url, headers=_default_headers(), timeout=20)
+    j = res.json() if res.ok else {}
+    data = j.get("data") or []
+    rows = []
+    for r in data:
+        code = str(r.get("stockNo") or "").strip().upper()
+        if not re.match(r"^[0-9A-Z]{4,6}$", code):
+            continue
+        rows.append(
+            {
+                "stockNo": code,
+                "stockName": str(r.get("stockName") or "").strip(),
+                "issuer": str(r.get("issuer") or "").strip(),
+                "indexName": str(r.get("indexName") or "").strip(),
+                "listingDate": str(r.get("listingDate") or "").strip(),
+                "exchange": "TPEX",
+            }
+        )
+    return pd.DataFrame(rows).drop_duplicates(subset=["exchange", "stockNo"]).reset_index(drop=True)
+
+
+@st.cache_data(ttl=900)
+def fetch_tpex_etf_div_v1() -> pd.DataFrame:
+    url = "https://info.tpex.org.tw/api/etfExDiv"
+    res = requests.get(url, headers=_default_headers(), timeout=25)
+    data = res.json() if res.ok else []
+    rows = []
+    for r in (data or []):
+        code = str(r.get("stockNo") or "").strip().upper()
+        if not code:
+            continue
+        rows.append(
+            {
+                "stockNo": code,
+                "stockName": str(r.get("stockName") or "").strip(),
+                "divDate": _parse_roc_date(r.get("divDate")),
+                "inBaseDate": _parse_roc_date(r.get("inBaseDate")),
+                "inDate": _parse_roc_date(r.get("inDate")),
+                "amount": r.get("amount"),
+                "exchange": "TPEX",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _chunk(xs: List[str], n: int) -> List[List[str]]:
+    return [xs[i : i + n] for i in range(0, len(xs), n)]
+
+
+@st.cache_data(ttl=300)
+def fetch_mis_quotes_v1(ex_ch_list: tuple) -> Dict[str, Dict]:
+    """Batch fetch MIS quotes. Input ex_ch_list like ('tse_0050.tw','otc_00679B.tw',...)."""
+    headers = {
+        **_default_headers(),
+        "Referer": "https://mis.twse.com.tw/stock/index.jsp",
+    }
+    out: Dict[str, Dict] = {}
+    url = "https://mis.twse.com.tw/stock/api/getStockInfo.jsp"
+    items = [str(x) for x in (ex_ch_list or tuple()) if x]
+    for batch in _chunk(items, 50):
+        try:
+            params = {"ex_ch": "|".join(batch), "json": 1, "delay": 0}
+            res = requests.get(url, params=params, headers=headers, timeout=12)
+            j = res.json() if res.ok else {}
+            arr = (j or {}).get("msgArray") or []
+            for row in arr:
+                code = str((row or {}).get("c") or "").strip().upper()
+                if code:
+                    out[code] = row
+        except Exception:
+            continue
+    return out
+
+
+def build_etf_calendar_table_v1(
+    include_tpex: bool = True,
+    exclude_leverage_inverse: bool = True,
+    exclude_commodity: bool = True,
+) -> tuple[pd.DataFrame, Dict]:
+    """ETF 配息行事曆：回傳『每檔 ETF 下一次未除息事件』表格（V1）。"""
+    today = now_tw().date()
+
+    # master list
+    dfs = [fetch_twse_etf_list_v1()]
+    if include_tpex:
+        dfs.append(fetch_tpex_etf_list_v1())
+    master = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+    if master.empty:
+        return pd.DataFrame(), {"today": str(today), "excluded": 0}
+
+    master["_leverage_inverse"] = master.apply(
+        lambda r: _is_leverage_or_inverse(str(r.get("stockNo")), str(r.get("stockName")), str(r.get("indexName"))),
+        axis=1,
+    )
+    master["_commodity"] = master.apply(
+        lambda r: _is_commodity(str(r.get("stockNo")), str(r.get("stockName")), str(r.get("indexName"))),
+        axis=1,
+    )
+
+    filtered = master.copy()
+    if exclude_leverage_inverse:
+        filtered = filtered[~filtered["_leverage_inverse"]]
+    if exclude_commodity:
+        filtered = filtered[~filtered["_commodity"]]
+
+    # dividend events
+    evs = [fetch_twse_etf_div_v1()]
+    if include_tpex:
+        evs.append(fetch_tpex_etf_div_v1())
+    div = pd.concat(evs, ignore_index=True) if evs else pd.DataFrame()
+    if div.empty:
+        return pd.DataFrame(), {"today": str(today), "excluded": int(len(master) - len(filtered))}
+
+    # next upcoming event per ETF
+    upcoming = div[(div["divDate"].notna()) & (div["divDate"] >= today)].copy()
+    if upcoming.empty:
+        return pd.DataFrame(), {"today": str(today), "excluded": int(len(master) - len(filtered))}
+
+    upcoming = upcoming.sort_values(["divDate", "stockNo"], ascending=[True, True])
+    next_evt = (
+        upcoming.groupby(["exchange", "stockNo"], as_index=False)
+        .first()[["exchange", "stockNo", "stockName", "divDate", "inBaseDate", "inDate", "amount"]]
+        .copy()
+    )
+
+    out = filtered.merge(next_evt, on=["exchange", "stockNo"], how="inner", suffixes=("", "_evt"))
+    if out.empty:
+        return pd.DataFrame(), {"today": str(today), "excluded": int(len(master) - len(filtered))}
+
+    # quarterly (best-effort using last 12M event frequency)
+    last_365 = div[(div["divDate"].notna()) & (div["divDate"] >= (today - dt.timedelta(days=365))) & (div["divDate"] <= today)]
+    freq = last_365.groupby(["exchange", "stockNo"]).size().rename("divCount12m").reset_index()
+    out = out.merge(freq, on=["exchange", "stockNo"], how="left")
+    out["divCount12m"] = out["divCount12m"].fillna(0).astype(int)
+    out["isQuarterly"] = out["divCount12m"].between(3, 5)
+    out["techProxy"] = out.apply(lambda r: _is_tech_proxy(str(r.get("stockName")), str(r.get("indexName"))), axis=1)
+
+    # presentation
+    out["市場"] = out["exchange"].map({"TWSE": "上市", "TPEX": "上櫃"}).fillna(out["exchange"])
+    out["除息日"] = out["divDate"].astype(str)
+    out["基準日"] = out["inBaseDate"].astype(str)
+    out["發放日"] = out["inDate"].astype(str)
+    out["距離除息(天)"] = (out["divDate"] - today).apply(lambda x: int(x.days) if pd.notna(x) else None)
+
+    def _tag(r):
+        if bool(r.get("isQuarterly")) and bool(r.get("techProxy")):
+            return "季配 + 科技(推定)"
+        if bool(r.get("isQuarterly")):
+            return "季配(推定)"
+        if bool(r.get("techProxy")):
+            return "科技(推定)"
+        return ""
+
+    out["標註"] = out.apply(_tag, axis=1)
+
+    out = out.sort_values(["divDate", "stockNo"], ascending=[True, True]).reset_index(drop=True)
+
+    meta = {
+        "today": str(today),
+        "excluded": int(len(master) - len(filtered)),
+        "total": int(len(master)),
+        "kept": int(len(filtered)),
+        "withUpcoming": int(len(out)),
+    }
+    return out, meta
+
+
+def enrich_etf_prices_v1(df: pd.DataFrame, max_rows: int = 250) -> pd.DataFrame:
+    """為表格補上『價格/來源/資料日期』。只對前 max_rows 批次抓報價，避免過重。"""
+    if df is None or df.empty:
+        return df
+
+    view = df.copy().reset_index(drop=True)
+    view_n = int(min(max_rows, len(view)))
+
+    ex_list = []
+    for i in range(view_n):
+        r = view.iloc[i]
+        ex = "tse" if str(r.get("exchange")) == "TWSE" else "otc"
+        code = str(r.get("stockNo") or "").strip().upper()
+        if code:
+            ex_list.append(f"{ex}_{code}.tw")
+
+    quotes = fetch_mis_quotes_v1(tuple(ex_list)) if ex_list else {}
+
+    prices = []
+    sources = []
+    dates = []
+    for i in range(len(view)):
+        if i >= view_n:
+            prices.append(None)
+            sources.append("-")
+            dates.append(None)
+            continue
+        code = str(view.iloc[i].get("stockNo") or "").strip().upper()
+        q = (quotes or {}).get(code) or {}
+        last = _parse_mixed_price(q.get("z"))
+        close = _parse_mixed_price(q.get("y"))
+        d = str(q.get("d") or "").strip()
+        if not pd.isna(last):
+            prices.append(float(last))
+            sources.append("即時")
+            dates.append(d or None)
+        elif not pd.isna(close):
+            prices.append(float(close))
+            sources.append("收盤")
+            dates.append(d or None)
+        else:
+            prices.append(None)
+            sources.append("-")
+            dates.append(d or None)
+
+    view.insert(0, "股價", prices)
+    view.insert(1, "價格來源", sources)
+    view.insert(2, "報價日期", dates)
+    return view
+
+
 @st.cache_data(ttl=1800)
 def fetch_daily_history(symbol: str, months_back: int = 30) -> Optional[pd.DataFrame]:
     # 優先：直接打 Yahoo chart API（比 yfinance wrapper 更可控）
@@ -838,24 +1207,115 @@ with _top_r:
 if isinstance(_q, str) and _q.strip():
     st.session_state["manual_symbol_query"] = _q.strip()
 
-st.title("台股全市場多空波段決策輔助（即時版）")
-st.caption("日K主導；盤中僅『單檔決策報告』用即時價量更新（避免全市場即時造成限流/逾時與反覆 fallback）。")
+st.title("台股工具")
 st.caption(f"build {APP_VERSION}")
 
 with st.sidebar:
-    st.header("資料來源")
-    # 合併「穩定查詢」與「真實即時」：即時優先，失敗自動回退本地保底
-    use_external = st.checkbox("啟用真實即時資料（失敗自動回退穩定）", value=True)
-    mock_demo = st.checkbox("Mock示範", value=False)
-    universe_n = st.slider("掃描檔數", 20, 300, 20, 10)
-    topn = st.slider("排行榜 TopN", 5, 30, 10, 1)
-    _mh = is_market_hours_tw()
-    if use_external and not _mh:
-        st.caption("已收盤/非交易時段：即時抓取會自動暫停，改用最近收盤結果（避免一直重複跑掃描）。")
-    elif use_external:
-        st.caption("盤中即時僅用於『單檔決策報告』；排行榜/全市場掃描以日K為主。需要更新時可手動刷新。")
+    st.header("功能")
+    page_mode = st.radio("功能", ["股票決策", "ETF 配息行事曆"], index=0)
+    st.divider()
+
+    if page_mode == "ETF 配息行事曆":
+        include_tpex = st.checkbox("包含上櫃 ETF", value=True)
+        exclude_li = st.checkbox("排除槓桿/反向", value=True)
+        exclude_com = st.checkbox("排除商品型（黃金/原油等）", value=True)
+        horizon_days = st.slider("只看未來 N 天內除息", 7, 180, 60, 7)
+        max_rows = st.slider("顯示前 N 檔", 20, 500, 200, 20)
+        price_rows = st.slider("抓即時/收盤報價筆數", 20, 400, 250, 10)
+        watch_raw = st.text_input("Watchlist（代號，逗號/空白分隔，可留空）", value="")
+        st.caption("註：『科技/季配』目前為關鍵字/頻率推定（非嚴格科技比重>50%）。")
     else:
-        st.caption("離線保底：不連外抓即時資料；資料會隨你重新整理網頁自動更新。")
+        st.header("資料來源")
+        # 合併「穩定查詢」與「真實即時」：即時優先，失敗自動回退本地保底
+        use_external = st.checkbox("啟用真實即時資料（失敗自動回退穩定）", value=True)
+        mock_demo = st.checkbox("Mock示範", value=False)
+        universe_n = st.slider("掃描檔數", 20, 300, 20, 10)
+        topn = st.slider("排行榜 TopN", 5, 30, 10, 1)
+        _mh = is_market_hours_tw()
+        if use_external and not _mh:
+            st.caption("已收盤/非交易時段：即時抓取會自動暫停，改用最近收盤結果（避免一直重複跑掃描）。")
+        elif use_external:
+            st.caption("盤中即時僅用於『單檔決策報告』；排行榜/全市場掃描以日K為主。需要更新時可手動刷新。")
+        else:
+            st.caption("離線保底：不連外抓即時資料；資料會隨你重新整理網頁自動更新。")
+
+# ----------------------------
+# ETF 配息行事曆（V1）
+# ----------------------------
+if page_mode == "ETF 配息行事曆":
+    st.header("ETF 配息行事曆（台股 ETF）")
+    st.caption("列出每檔 ETF 的『下一次未除息事件』，依除息日排序。股價：有即時則顯示即時，否則顯示收盤。")
+
+    base_df, meta = build_etf_calendar_table_v1(
+        include_tpex=bool(include_tpex),
+        exclude_leverage_inverse=bool(exclude_li),
+        exclude_commodity=bool(exclude_com),
+    )
+
+    if base_df is None or base_df.empty:
+        st.warning("目前抓不到可用的 ETF 配息事件資料（可能是來源暫時不可用或資料結構變更）。請稍後再試。")
+        st.stop()
+
+    today = now_tw().date()
+    deadline = today + dt.timedelta(days=int(horizon_days))
+    base_df = base_df[(base_df["divDate"].notna()) & (base_df["divDate"] <= deadline)].copy()
+
+    # watchlist filter
+    watch = []
+    if isinstance(watch_raw, str) and watch_raw.strip():
+        watch = [x.strip().upper() for x in re.split(r"[\s,，]+", watch_raw.strip()) if x.strip()]
+        if watch:
+            base_df = base_df[base_df["stockNo"].isin(watch)].copy()
+
+    q = st.text_input("搜尋（代號/名稱/指數/發行人）", value="")
+    if isinstance(q, str) and q.strip():
+        qq = q.strip()
+        mask = (
+            base_df["stockNo"].astype(str).str.contains(qq, na=False)
+            | base_df["stockName"].astype(str).str.contains(qq, na=False)
+            | base_df["indexName"].astype(str).str.contains(qq, na=False)
+            | base_df["issuer"].astype(str).str.contains(qq, na=False)
+        )
+        base_df = base_df[mask].copy()
+
+    base_df = base_df.sort_values(["divDate", "stockNo"], ascending=[True, True]).reset_index(drop=True)
+    view = enrich_etf_prices_v1(base_df.head(int(max_rows)), max_rows=int(price_rows))
+
+    show_cols = [
+        "市場",
+        "stockNo",
+        "stockName",
+        "股價",
+        "價格來源",
+        "報價日期",
+        "除息日",
+        "基準日",
+        "發放日",
+        "標註",
+        "issuer",
+        "indexName",
+    ]
+    show_cols = [c for c in show_cols if c in view.columns]
+    out = view[show_cols].rename(
+        columns={
+            "stockNo": "代號",
+            "stockName": "名稱",
+            "issuer": "發行人",
+            "indexName": "標的指數",
+        }
+    )
+
+    safe_dataframe(out)
+
+    st.caption(
+        f"今天：{meta.get('today')}｜原始 ETF：{meta.get('total')}｜保留（排除槓反/商品後）：{meta.get('kept')}｜有未除息事件：{meta.get('withUpcoming')}｜本頁顯示：{len(out)}"
+    )
+    st.stop()
+
+# ----------------------------
+# 股票決策（盤中單檔即時）
+# ----------------------------
+st.subheader("股票決策（盤中單檔即時；排行榜/全市場掃描以日K為主）")
 
 symbol_map = {**{s: s for s in CORE_SYMBOLS}, **LOCAL_SYMBOL_NAME_MAP}
 # 啟動健康優先：首屏預設只用本地名稱表，避免冷啟動額外網路請求拖慢連線建立。
