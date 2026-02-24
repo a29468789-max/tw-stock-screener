@@ -9,6 +9,11 @@ import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
+import urllib3
+from requests.exceptions import SSLError
+
+# 部分來源（例如 TWSE）在某些環境可能觸發 SSL 驗證異常；我們在必要時會以 verify=False 退而求其次。
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 try:
     import yfinance as yf
@@ -545,6 +550,31 @@ def _default_headers() -> Dict[str, str]:
     }
 
 
+def _get_json_best_effort(
+    url: str,
+    *,
+    params: Optional[Dict] = None,
+    headers: Optional[Dict[str, str]] = None,
+    timeout: int = 20,
+) -> tuple[object, bool]:
+    """GET JSON with a best-effort SSL fallback.
+
+    Returns: (json_obj, insecure)
+    - insecure=True means we had to retry with verify=False due to SSL verification errors.
+    """
+    hdrs = headers or _default_headers()
+    try:
+        res = requests.get(url, params=params, headers=hdrs, timeout=timeout)
+        res.raise_for_status()
+        return res.json(), False
+    except SSLError:
+        # 一些環境（特別是較新的 OpenSSL 驗證規則）可能對特定站台憑證更嚴格。
+        # 對於公開的 ETF 清單/配息公告資料，允許退而求其次以確保服務可用。
+        res = requests.get(url, params=params, headers=hdrs, timeout=timeout, verify=False)
+        res.raise_for_status()
+        return res.json(), True
+
+
 # ----------------------------
 # ETF dividend calendar (V1)
 # ----------------------------
@@ -631,9 +661,10 @@ def _is_tech_proxy(name: str, index_name: str) -> bool:
 @st.cache_data(ttl=3600)
 def fetch_twse_etf_list_v1() -> pd.DataFrame:
     url = "https://www.twse.com.tw/rwd/zh/ETF/list"
-    res = requests.get(url, params={"response": "json"}, headers=_default_headers(), timeout=15)
-    j = res.json() if res.ok else {}
-    data = j.get("data") or []
+    j, insecure = _get_json_best_effort(url, params={"response": "json"}, timeout=20)
+    if insecure:
+        st.session_state["_twse_ssl_insecure"] = True
+    data = (j or {}).get("data") or []
     rows = []
     for r in data:
         if not r or len(r) < 5:
@@ -665,9 +696,10 @@ def fetch_twse_etf_list_v1() -> pd.DataFrame:
 @st.cache_data(ttl=900)
 def fetch_twse_etf_div_v1() -> pd.DataFrame:
     url = "https://www.twse.com.tw/rwd/zh/ETF/etfDiv"
-    res = requests.get(url, params={"response": "json"}, headers=_default_headers(), timeout=20)
-    j = res.json() if res.ok else {}
-    data = j.get("data") or []
+    j, insecure = _get_json_best_effort(url, params={"response": "json"}, timeout=25)
+    if insecure:
+        st.session_state["_twse_ssl_insecure"] = True
+    data = (j or {}).get("data") or []
     rows = []
     for r in data:
         # expected: [code,name,divDate,inBaseDate,inDate,amount,desc,year]
@@ -1245,6 +1277,8 @@ with st.sidebar:
 if page_mode == "ETF 配息行事曆":
     st.header("ETF 配息行事曆（台股 ETF）")
     st.caption("列出每檔 ETF 的『下一次未除息事件』，依除息日排序。股價：有即時則顯示即時，否則顯示收盤。")
+    if st.session_state.get("_twse_ssl_insecure"):
+        st.warning("⚠️ 目前伺服器端對 TWSE 憑證驗證出現相容性問題，已暫時以『不驗證 SSL』方式抓取官方公開資料以確保可用性。")
 
     base_df, meta = build_etf_calendar_table_v1(
         include_tpex=bool(include_tpex),
