@@ -839,7 +839,7 @@ if isinstance(_q, str) and _q.strip():
     st.session_state["manual_symbol_query"] = _q.strip()
 
 st.title("台股全市場多空波段決策輔助（即時版）")
-st.caption("日K主導，盤中用即時價量更新今日日K後重算分數。")
+st.caption("日K主導；盤中僅『單檔決策報告』用即時價量更新（避免全市場即時造成限流/逾時與反覆 fallback）。")
 st.caption(f"build {APP_VERSION}")
 
 with st.sidebar:
@@ -853,7 +853,7 @@ with st.sidebar:
     if use_external and not _mh:
         st.caption("已收盤/非交易時段：即時抓取會自動暫停，改用最近收盤結果（避免一直重複跑掃描）。")
     elif use_external:
-        st.caption("資料會隨你重新整理網頁自動更新；盤中若想更即時，可自行多刷新幾次。")
+        st.caption("盤中即時僅用於『單檔決策報告』；排行榜/全市場掃描以日K為主。需要更新時可手動刷新。")
     else:
         st.caption("離線保底：不連外抓即時資料；資料會隨你重新整理網頁自動更新。")
 
@@ -985,8 +985,8 @@ elif not market_hours:
             f"有 {meta['fallback_history_count']} 檔歷史來源不可用，已改用本地備援資料（資料日期：{dates_text}）。"
         )
 else:
-    st.caption("自動模式：優先使用真實即時資料；若來源暫時不可用，會自動回退本地保底（不中斷、不顯示股票池不可用致命錯誤）。")
-    st.info("健康檢查保底：若外部股票池/即時 API 失敗，仍會維持可掃描清單與單檔查詢。")
+    st.caption("盤中模式：排行榜/全市場掃描以日K為主（不逐檔抓即時，避免限流/逾時）；單檔查詢才會優先使用真實即時資料（失敗自動回退）。")
+    st.info("保底：就算外部股票池/即時 API 偶發失敗，仍會維持可掃描清單與單檔查詢不中斷。")
     # Local-first：先以本地池直接建立可掃描 universe（外部來源僅補強，不作為啟動前提）
     symbols_local = pad_symbols_to_target(get_base_pool(), max(20, universe_n))
     if not symbols_local:
@@ -1012,14 +1012,13 @@ else:
 
     rows = []
     fallback_history_count = 0
-    # 即時來源失敗（或超過首屏預算）時，會用日K最後一筆估算；需註明資料日期
-    fallback_rt_count = 0
-    fallback_rt_dates = set()
     symbol_error_count = 0
     startup_budget_hit = False
     scan_started_at = time.time()
-    progress = st.progress(0, text="載入即時資料中...") if symbols else None
+    progress = st.progress(0, text="載入資料中...") if symbols else None
 
+    # 重要：盤中「排行榜/全市場」掃描一律以日K為主，不逐檔連外抓即時報價。
+    # 目的：避免大量連線導致限流/逾時、也避免 UI 一直卡在載入（你看到的空白/骨架通常就是這種情境）。
     for i, sym in enumerate(symbols, start=1):
         use_fast_fallback = (time.time() - scan_started_at) >= STARTUP_SCAN_BUDGET_SEC
         if use_fast_fallback:
@@ -1028,37 +1027,15 @@ else:
         try:
             if use_fast_fallback:
                 daily = generate_local_history(sym)
-                rt = None
                 fallback_history_count += 1
             else:
                 daily = fetch_daily_history(sym)
-                rt = fetch_realtime(sym)
+
             if daily is None or len(daily) < 120:
                 daily = generate_local_history(sym)
                 fallback_history_count += 1
 
-            # 即時源偶發失敗時，改用最新日K收盤近似，避免整體清單為空
-            if rt is None:
-                last = daily.iloc[-1]
-                try:
-                    d = pd.to_datetime(last.get("date", pd.NaT)).date().isoformat()
-                except Exception:
-                    d = "unknown"
-                fallback_rt_count += 1
-                if d and d != "unknown":
-                    fallback_rt_dates.add(d)
-                rt = {
-                    "last": float(last["close"]),
-                    "open": float(last["open"]),
-                    "high": float(last["high"]),
-                    "low": float(last["low"]),
-                    "volume": float(last["volume"]),
-                    # 明確註明：此為日K備援資料（非即時），並附資料日期
-                    "time": f"fallback-daily:{d}",
-                }
-
-            daily2 = upsert_today_bar(daily, rt)
-            daily2 = add_indicators(daily2)
+            daily2 = add_indicators(daily)
             result = score_symbol(daily2, market_aligned=True)
         except Exception:
             symbol_error_count += 1
@@ -1093,25 +1070,16 @@ else:
         progress.empty()
 
     if fallback_history_count > 0:
-        st.info(f"有 {fallback_history_count} 檔即時歷史來源不可用，已改用本地備援資料持續計算。")
-    if fallback_rt_count > 0:
-        dates = sorted(list(fallback_rt_dates))
-        if len(dates) == 0:
-            dates_text = "unknown"
-        elif len(dates) <= 3:
-            dates_text = ", ".join(dates)
-        else:
-            dates_text = f"{dates[0]} ~ {dates[-1]}"
-        st.info(f"有 {fallback_rt_count} 檔即時報價不可用，已改用日K備援估算（資料日期：{dates_text}）。")
+        st.info(f"有 {fallback_history_count} 檔歷史資料來源不可用，已改用本地備援資料持續計算。")
     if symbol_error_count > 0:
-        st.info(f"有 {symbol_error_count} 檔即時處理失敗，已自動以本地備援資料補齊。")
+        st.info(f"有 {symbol_error_count} 檔處理失敗，已自動以本地備援資料補齊。")
     if startup_budget_hit:
         st.info("為確保頁面可快速互動，部分標的已先以本地備援資料載入。")
 
     if rows:
         market = pd.DataFrame(rows)
     elif symbols:
-        st.warning("目前抓不到可用即時資料，已改用本地股票池與歷史備援資料持續服務。")
+        st.warning("目前抓不到可用資料，已改用本地股票池與歷史備援資料持續服務。")
         base_pool = get_base_pool()
         fallback_symbols = base_pool[: max(20, min(universe_n, len(base_pool)))]
         fallback_rows = []
