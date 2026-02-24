@@ -728,9 +728,10 @@ def fetch_twse_etf_div_v1() -> pd.DataFrame:
 @st.cache_data(ttl=3600)
 def fetch_tpex_etf_list_v1() -> pd.DataFrame:
     url = "https://info.tpex.org.tw/api/etfFilter"
-    res = requests.get(url, headers=_default_headers(), timeout=20)
-    j = res.json() if res.ok else {}
-    data = j.get("data") or []
+    j, insecure = _get_json_best_effort(url, timeout=25)
+    if insecure:
+        st.session_state["_tpex_ssl_insecure"] = True
+    data = (j or {}).get("data") or []
     rows = []
     for r in data:
         code = str(r.get("stockNo") or "").strip().upper()
@@ -752,8 +753,9 @@ def fetch_tpex_etf_list_v1() -> pd.DataFrame:
 @st.cache_data(ttl=900)
 def fetch_tpex_etf_div_v1() -> pd.DataFrame:
     url = "https://info.tpex.org.tw/api/etfExDiv"
-    res = requests.get(url, headers=_default_headers(), timeout=25)
-    data = res.json() if res.ok else []
+    data, insecure = _get_json_best_effort(url, timeout=30)
+    if insecure:
+        st.session_state["_tpex_ssl_insecure"] = True
     rows = []
     for r in (data or []):
         code = str(r.get("stockNo") or "").strip().upper()
@@ -1277,8 +1279,8 @@ with st.sidebar:
 if page_mode == "ETF 配息行事曆":
     st.header("ETF 配息行事曆（台股 ETF）")
     st.caption("列出每檔 ETF 的『下一次未除息事件』，依除息日排序。股價：有即時則顯示即時，否則顯示收盤。")
-    if st.session_state.get("_twse_ssl_insecure"):
-        st.warning("⚠️ 目前伺服器端對 TWSE 憑證驗證出現相容性問題，已暫時以『不驗證 SSL』方式抓取官方公開資料以確保可用性。")
+    if st.session_state.get("_twse_ssl_insecure") or st.session_state.get("_tpex_ssl_insecure"):
+        st.warning("⚠️ 目前伺服器端對部分官方站台憑證驗證出現相容性問題，已暫時以『不驗證 SSL』方式抓取公開資料以確保可用性（TWSE/TPEX）。")
 
     base_df, meta = build_etf_calendar_table_v1(
         include_tpex=bool(include_tpex),
